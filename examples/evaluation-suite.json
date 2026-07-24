@@ -1,0 +1,21 @@
+{
+  "knowledge_base_id": "platform",
+  "cases": [
+    {
+      "question": "Which command shows logs from the previous crashed container?",
+      "expected_source_ids": ["src-d0ddef69082afff0"]
+    },
+    {
+      "question": "What effective configuration should be compared after a failed rollout?",
+      "expected_source_ids": ["src-fc5c92d441c484ab"]
+    },
+    {
+      "question": "How can a startup probe prevent a migration restart loop?",
+      "expected_source_ids": [
+        "src-d0ddef69082afff0",
+        "src-ecc35d05aefe91f2"
+      ]
+    }
+  ]
+}
+

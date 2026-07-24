@@ -1,0 +1,73 @@
+name: CI and deploy Tokyo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runbookiq-tokyo-production
+  cancel-in-progress: false
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - working-directory: backend
+        run: |
+          uv sync --frozen
+          uv run ruff check .
+          uv run pytest -q
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: |
+          npm ci
+          npm run test
+          npm run lint
+          npm run build
+
+  deploy:
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build immutable release archive
+        run: tar --exclude=.git -czf "/tmp/runbookiq-${GITHUB_SHA}.tar.gz" .
+      - name: Configure deployment SSH identity
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.TOKYO_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.TOKYO_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${DEPLOY_SSH_KEY}" > ~/.ssh/runbookiq-deploy
+          chmod 600 ~/.ssh/runbookiq-deploy
+          printf '%s\n' "${DEPLOY_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Upload and activate release
+        env:
+          DEPLOY_HOST: ${{ secrets.TOKYO_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TOKYO_DEPLOY_USER }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh -i ~/.ssh/runbookiq-deploy "${target}" \
+            "mkdir -p ~/runbookiq/inbox"
+          scp -i ~/.ssh/runbookiq-deploy \
+            "/tmp/runbookiq-${GITHUB_SHA}.tar.gz" \
+            "${target}:runbookiq/inbox/${GITHUB_SHA}.tar.gz"
+          ssh -i ~/.ssh/runbookiq-deploy "${target}" \
+            "bash ~/runbookiq/bin/deploy-release.sh ~/runbookiq/inbox/${GITHUB_SHA}.tar.gz ${GITHUB_SHA}"

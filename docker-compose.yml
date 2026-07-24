@@ -1,0 +1,109 @@
+name: runbookiq
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+    environment:
+      POSTGRES_DB: runbookiq
+      POSTGRES_USER: runbookiq
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runbookiq}
+      RUNBOOKIQ_EMBEDDING_DIMENSIONS: ${RUNBOOKIQ_EMBEDDING_DIMENSIONS:-768}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/001-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runbookiq -d runbookiq"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["local-models"]
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  ollama-init:
+    image: ollama/ollama:latest
+    profiles: ["local-models"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      RUNBOOKIQ_CHAT_PROVIDER: ${RUNBOOKIQ_CHAT_PROVIDER:-ollama}
+      RUNBOOKIQ_EMBEDDING_PROVIDER: ${RUNBOOKIQ_EMBEDDING_PROVIDER:-ollama}
+      RUNBOOKIQ_CHAT_MODEL: ${RUNBOOKIQ_CHAT_MODEL:-qwen2.5:7b}
+      RUNBOOKIQ_EMBEDDING_MODEL: ${RUNBOOKIQ_EMBEDDING_MODEL:-nomic-embed-text}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        if [ "$${RUNBOOKIQ_EMBEDDING_PROVIDER}" = "ollama" ]; then
+          ollama pull "$${RUNBOOKIQ_EMBEDDING_MODEL}";
+        fi &&
+        if [ "$${RUNBOOKIQ_CHAT_PROVIDER}" = "ollama" ]; then
+          ollama pull "$${RUNBOOKIQ_CHAT_MODEL}";
+        fi
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: runbookiq-api:${RUNBOOKIQ_RELEASE:-local}
+    build: ./backend
+    environment:
+      RUNBOOKIQ_MODE: production
+      RUNBOOKIQ_DATABASE_URL: postgresql+asyncpg://runbookiq:${POSTGRES_PASSWORD:-runbookiq}@postgres:5432/runbookiq
+      RUNBOOKIQ_OLLAMA_BASE_URL: http://ollama:11434
+      RUNBOOKIQ_EMBEDDING_PROVIDER: ${RUNBOOKIQ_EMBEDDING_PROVIDER:-fastembed}
+      RUNBOOKIQ_EMBEDDING_BASE_URL: ${RUNBOOKIQ_EMBEDDING_BASE_URL:-}
+      RUNBOOKIQ_EMBEDDING_API_KEY: ${RUNBOOKIQ_EMBEDDING_API_KEY:-}
+      RUNBOOKIQ_EMBEDDING_MODEL: ${RUNBOOKIQ_EMBEDDING_MODEL:-nomic-ai/nomic-embed-text-v1.5-Q}
+      RUNBOOKIQ_EMBEDDING_DIMENSIONS: ${RUNBOOKIQ_EMBEDDING_DIMENSIONS:-768}
+      RUNBOOKIQ_FASTEMBED_CACHE_DIR: /models
+      RUNBOOKIQ_CHAT_PROVIDER: ${RUNBOOKIQ_CHAT_PROVIDER:-openai_compatible}
+      RUNBOOKIQ_CHAT_BASE_URL: ${RUNBOOKIQ_CHAT_BASE_URL:-}
+      RUNBOOKIQ_CHAT_API_KEY: ${RUNBOOKIQ_CHAT_API_KEY:-}
+      RUNBOOKIQ_CHAT_MODEL: ${RUNBOOKIQ_CHAT_MODEL:-qwen2.5:7b}
+      RUNBOOKIQ_CHAT_THINKING_ENABLED: ${RUNBOOKIQ_CHAT_THINKING_ENABLED:-false}
+      RUNBOOKIQ_CHAT_MAX_TOKENS: ${RUNBOOKIQ_CHAT_MAX_TOKENS:-1600}
+      RUNBOOKIQ_QUERY_TIMEOUT_SECONDS: ${RUNBOOKIQ_QUERY_TIMEOUT_SECONDS:-60}
+      RUNBOOKIQ_RERANK_PROVIDER: ${RUNBOOKIQ_RERANK_PROVIDER:-chat}
+      RUNBOOKIQ_OCR_LANGUAGES: ${RUNBOOKIQ_OCR_LANGUAGES:-chi_sim+eng}
+      RUNBOOKIQ_OCR_TIMEOUT_SECONDS: ${RUNBOOKIQ_OCR_TIMEOUT_SECONDS:-30}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+        required: false
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    volumes:
+      - model_cache:/models
+
+  web:
+    image: runbookiq-web:${RUNBOOKIQ_RELEASE:-local}
+    build: ./frontend
+    ports:
+      - "${APP_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  ollama_data:
+  model_cache:
