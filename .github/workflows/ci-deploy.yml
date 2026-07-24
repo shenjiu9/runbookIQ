@@ -3,6 +3,8 @@ name: CI and deploy Tokyo
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -41,6 +43,7 @@ jobs:
           npm run build
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: [test-backend, test-frontend]
     runs-on: ubuntu-latest
     environment: production
