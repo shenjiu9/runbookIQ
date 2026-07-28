@@ -17,6 +17,7 @@ concurrency:
 jobs:
   test-backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -28,6 +29,7 @@ jobs:
 
   test-frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,14 +45,37 @@ jobs:
           npm run build
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: >-
+      ${{
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      }}
     needs: [test-backend, test-frontend]
     runs-on: ubuntu-latest
-    environment: production
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://rag.xn--bang-fe6gk6c.top/
     steps:
       - uses: actions/checkout@v4
       - name: Build immutable release archive
         run: tar --exclude=.git -czf "/tmp/runbookiq-${GITHUB_SHA}.tar.gz" .
+      - name: Validate deployment secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.TOKYO_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TOKYO_DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.TOKYO_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.TOKYO_KNOWN_HOSTS }}
+        run: |
+          missing=()
+          [[ -n "${DEPLOY_HOST}" ]] || missing+=("TOKYO_DEPLOY_HOST")
+          [[ -n "${DEPLOY_USER}" ]] || missing+=("TOKYO_DEPLOY_USER")
+          [[ -n "${DEPLOY_SSH_KEY}" ]] || missing+=("TOKYO_DEPLOY_SSH_KEY")
+          [[ -n "${DEPLOY_KNOWN_HOSTS}" ]] || missing+=("TOKYO_KNOWN_HOSTS")
+          if (( ${#missing[@]} > 0 )); then
+            printf '缺少 production Environment secret: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
       - name: Configure deployment SSH identity
         env:
           DEPLOY_SSH_KEY: ${{ secrets.TOKYO_DEPLOY_SSH_KEY }}
@@ -67,10 +92,42 @@ jobs:
           DEPLOY_USER: ${{ secrets.TOKYO_DEPLOY_USER }}
         run: |
           target="${DEPLOY_USER}@${DEPLOY_HOST}"
-          ssh -i ~/.ssh/runbookiq-deploy "${target}" \
+          ssh_options=(
+            -i ~/.ssh/runbookiq-deploy
+            -o BatchMode=yes
+            -o ConnectTimeout=15
+            -o StrictHostKeyChecking=yes
+          )
+          ssh "${ssh_options[@]}" "${target}" \
             "mkdir -p ~/runbookiq/inbox"
-          scp -i ~/.ssh/runbookiq-deploy \
+          scp "${ssh_options[@]}" \
             "/tmp/runbookiq-${GITHUB_SHA}.tar.gz" \
             "${target}:runbookiq/inbox/${GITHUB_SHA}.tar.gz"
-          ssh -i ~/.ssh/runbookiq-deploy "${target}" \
-            "bash ~/runbookiq/bin/deploy-release.sh ~/runbookiq/inbox/${GITHUB_SHA}.tar.gz ${GITHUB_SHA}"
+          ssh "${ssh_options[@]}" "${target}" \
+            "bash ~/runbookiq/bin/deploy-release.sh \
+              ~/runbookiq/inbox/${GITHUB_SHA}.tar.gz ${GITHUB_SHA}"
+          ssh "${ssh_options[@]}" "${target}" \
+            "test \"\$(readlink -f ~/runbookiq/current)\" = \
+              \"\$HOME/runbookiq/releases/${GITHUB_SHA}\""
+          ssh "${ssh_options[@]}" "${target}" \
+            "install -m 0750 \
+              ~/runbookiq/current/scripts/deploy-release.sh \
+              ~/runbookiq/bin/deploy-release.sh"
+      - name: Verify public production endpoint
+        run: |
+          curl --fail --silent --show-error \
+            --retry 12 \
+            --retry-all-errors \
+            --retry-delay 5 \
+            https://rag.xn--bang-fe6gk6c.top/api/health
+          {
+            echo "### RunbookIQ production deployed"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- URL: https://rag.xn--bang-fe6gk6c.top/"
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Remove temporary deployment credentials
+        if: always()
+        run: |
+          rm -f ~/.ssh/runbookiq-deploy
+          rm -f "/tmp/runbookiq-${GITHUB_SHA}.tar.gz"

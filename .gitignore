@@ -17,3 +17,4 @@ vite.config.js
 vite.config.d.ts
 ollama-data/
 postgres-data/
+/output/

@@ -135,7 +135,13 @@ sudo bash scripts/server-bootstrap.sh shenjiu
 前端测试，全部成功才调用服务器的
 [`deploy-release.sh`](scripts/deploy-release.sh)。部署脚本通过 `flock` 防止并发发布，
 失败时恢复上一版本容器；`postgres_data` 和 `model_cache` 是命名 volume，因此发布
-代码不会删除知识库或模型缓存。不要把 API Key 写入 Actions workflow 或仓库文件。
+代码不会删除知识库或模型缓存。工作流只允许 `main` 分支进入生产发布，发布完成后还会
+核对服务器 `current` 指针并通过公网 HTTPS 健康接口复验。不要把 API Key 写入 Actions
+workflow 或仓库文件。
+
+建议为 `main` 开启分支保护，并把 `test-backend`、`test-frontend` 设为必需检查。日常
+更新通过功能分支和 Pull Request 合并；合并后的 `main` 推送会自动部署。手动运行
+workflow 时也必须选择 `main`，其他分支只运行 CI，不会进入生产发布。
 
 ### 使用其他模型厂商
 
