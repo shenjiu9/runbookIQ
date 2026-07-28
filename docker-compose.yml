@@ -97,13 +97,33 @@ services:
     image: runbookiq-web:${RUNBOOKIQ_RELEASE:-local}
     build: ./frontend
     ports:
-      - "${APP_PORT:-8080}:80"
+      - "127.0.0.1:${APP_PORT:-8080}:80"
     depends_on:
       api:
         condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.11.4-alpine
+    environment:
+      RUNBOOKIQ_ROOT_DOMAIN: ${RUNBOOKIQ_ROOT_DOMAIN:-xn--bang-fe6gk6c.top}
+      RUNBOOKIQ_PUBLIC_DOMAIN: ${RUNBOOKIQ_PUBLIC_DOMAIN:-rag.xn--bang-fe6gk6c.top}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_started
     restart: unless-stopped
 
 volumes:
   postgres_data:
   ollama_data:
   model_cache:
+  caddy_data:
+  caddy_config:

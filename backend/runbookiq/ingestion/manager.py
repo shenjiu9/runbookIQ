@@ -1,4 +1,5 @@
 import hashlib
+from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
@@ -20,6 +21,42 @@ class KnowledgeWriter(Protocol):
         chunks: list[DocumentChunk],
         embeddings: list[list[float]],
     ) -> None: ...
+
+
+_TEXT_SUFFIXES = {
+    ".csv",
+    ".htm",
+    ".html",
+    ".json",
+    ".markdown",
+    ".md",
+    ".txt",
+    ".xml",
+    ".yaml",
+    ".yml",
+}
+_TEXT_CONTENT_TYPES = {
+    "application/json",
+    "application/xml",
+    "application/yaml",
+}
+
+
+def _canonical_source_bytes(
+    *,
+    filename: str,
+    content_type: str,
+    content: bytes,
+) -> bytes:
+    suffix = Path(filename).suffix.lower()
+    is_text = (
+        content_type.startswith("text/")
+        or content_type in _TEXT_CONTENT_TYPES
+        or suffix in _TEXT_SUFFIXES
+    )
+    if not is_text:
+        return content
+    return content.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
 
 
 class InlineIngestionManager:
@@ -48,7 +85,12 @@ class InlineIngestionManager:
         content: bytes,
     ) -> IngestionJob:
         job_id = f"job-{uuid4().hex[:12]}"
-        source_hash = hashlib.sha256(content).hexdigest()
+        identity_bytes = _canonical_source_bytes(
+            filename=filename,
+            content_type=content_type,
+            content=content,
+        )
+        source_hash = hashlib.sha256(identity_bytes).hexdigest()
         source_id = f"src-{source_hash[:16]}"
         job = IngestionJob(
             id=job_id,

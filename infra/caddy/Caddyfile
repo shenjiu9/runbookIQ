@@ -1,0 +1,18 @@
+{$RUNBOOKIQ_ROOT_DOMAIN:xn--bang-fe6gk6c.top} {
+	redir https://{$RUNBOOKIQ_PUBLIC_DOMAIN:rag.xn--bang-fe6gk6c.top}{uri} permanent
+}
+
+{$RUNBOOKIQ_PUBLIC_DOMAIN:rag.xn--bang-fe6gk6c.top} {
+	encode zstd gzip
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+
+	reverse_proxy web:80
+}

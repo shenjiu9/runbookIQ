@@ -15,7 +15,7 @@
   LLM evidence faithfulness；
 - 端口与适配器架构：生产默认使用轻量 ONNX FastEmbed，也可将 Chat 与 Embedding
   分别接入任意 OpenAI-compatible 厂商，Ollama 仅作为可选 profile；
-- React 调查控制台、FastAPI、Nginx、健康检查和 Docker Compose 单机部署。
+- React 调查控制台、FastAPI、Nginx、Caddy 自动 HTTPS、健康检查和 Docker Compose 单机部署。
 
 ![RunbookIQ console](docs/design/runbookiq-dashboard-concept.png)
 
@@ -92,16 +92,20 @@ Web、API 和 PostgreSQL/pgvector，不需要 GPU。
 git clone <your-repository-url> runbook-iq
 cd runbook-iq
 cp .env.example .env
-# 修改 .env 中的数据库密码、模型名和暴露端口
+# 修改 .env 中的数据库密码和模型配置
+# 配置已解析到服务器的根域名和主站域名；中文域名使用 xn-- 开头的 Punycode
 docker compose up -d --build
 docker compose ps
 ./scripts/seed.sh
 ```
 
-访问 `http://SERVER_IP:8080`。默认 Embedding 使用内置 FastEmbed ONNX 运行时，首次
+确保域名的 A 记录已指向服务器，并在防火墙开放 TCP 80/443。Caddy 会自动申请和续期
+TLS 证书、将 HTTP 重定向到 HTTPS，并把根域名重定向到主站域名。公网通过
+`https://RUNBOOKIQ_PUBLIC_DOMAIN` 访问；`8080` 只绑定服务器回环地址，用于本机健康检查。
+
+默认 Embedding 使用内置 FastEmbed ONNX 运行时，首次
 启动会下载约 130 MB 的 `nomic-embed-text-v1.5-Q` 模型并缓存到 Docker volume；
-Chat 与 reranker 使用你配置的外部 Chat API。生产公网部署时，应在本 Compose 前增加
-HTTPS 反向代理，并至少补充 SSO、
+Chat 与 reranker 使用你配置的外部 Chat API。正式保存企业内部资料前，还应补充 SSO、
 知识库级 ACL、备份和日志采集；当前仓库默认面向可信内网或作品演示环境。
 
 ### GitHub 自动发布到服务器
@@ -273,14 +277,17 @@ adapter contract、持久化重启和评测指标。常规 CI 不调用在线模
 
 ## 简历写法
 
-可根据你实际部署和评测后的结果改写数字：
+2026-07-24 在东京生产环境运行完整 60 条套件，实测 Recall@5 `1.0000`、
+MRR@5 `0.9611`、Precision@5 `0.4694`、LLM 证据忠实度 `0.8212`；60 条问题
+全部在前 5 条证据中命中黄金来源，其中 56 条首位命中。详细记录见
+[完整评测报告](docs/evaluation/2026-07-24-production-benchmark.md)。
 
 > 独立设计并实现面向 SRE 故障调查的企业级 RAG 工作台 RunbookIQ；构建
 > 多知识库严格隔离及 Markdown/PDF/DOCX/OCR parent-child 摄取管线，基于 PostgreSQL
 > FTS + pgvector 的双路检索、RRF 融合与 LLM rerank，并实现段落级引用和全链路
-> latency trace；建立 60 条中英文
-> golden set，实测 Recall@5、MRR@5、Precision@5 与 LLM 证据忠实度，通过 Docker Compose 部署 React/FastAPI/
-> PostgreSQL 与可配置外部模型 API 完整服务。
+> latency trace；建立 60 条中英文 golden set，生产环境实测 Recall@5 1.00、
+> MRR@5 0.96、证据忠实度 0.82，通过 Docker Compose 部署 React/FastAPI/
+> PostgreSQL/Caddy 与可配置外部模型 API 完整服务。
 
 面试时只使用完整 60 条套件的实际运行结果，不要把快速样本或未实测的提升比例写进简历。
 

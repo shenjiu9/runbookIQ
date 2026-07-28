@@ -4,6 +4,7 @@ import {
   askRunbook,
   createKnowledgeBase,
   deleteKnowledgeBase,
+  fetchRuntimeConfig,
   listKnowledgeBases,
   QUERY_TIMEOUT_MS
 } from "./api";
@@ -90,5 +91,34 @@ describe("askRunbook", () => {
       ["http://127.0.0.1:8004/api/knowledge-bases", "POST"],
       ["http://127.0.0.1:8004/api/knowledge-bases/kb-finance", "DELETE"]
     ]);
+  });
+
+  it("reads the browser-safe runtime configuration", async () => {
+    const runtimeConfig = {
+      mode: "production",
+      chat_provider: "openai_compatible",
+      chat_base_url: "https://api.example.com",
+      chat_model: "chat-model",
+      embedding_provider: "fastembed",
+      embedding_base_url: null,
+      embedding_model: "embedding-model",
+      embedding_dimensions: 768,
+      rerank_provider: "chat",
+      query_timeout_seconds: 60,
+      ocr_languages: "chi_sim+eng",
+      max_document_mib: 20
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(runtimeConfig), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await fetchRuntimeConfig()).toEqual(runtimeConfig);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8004/api/runtime-config"
+    );
   });
 });

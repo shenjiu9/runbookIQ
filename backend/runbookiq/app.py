@@ -36,6 +36,7 @@ def create_app(
     evaluator: Evaluator | None = None,
     knowledge_bases: KnowledgeBaseCatalog | None = None,
     query_timeout_seconds: float = 60,
+    runtime_config: dict[str, str | int | float | None] | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="RunbookIQ",
@@ -58,6 +59,20 @@ def create_app(
     app.state.evaluator = evaluator or DemoEvaluator()
     app.state.knowledge_bases = knowledge_bases or InMemoryKnowledgeBaseCatalog()
     app.state.query_timeout_seconds = query_timeout_seconds
+    app.state.runtime_config = runtime_config or {
+        "mode": "local",
+        "chat_provider": "local",
+        "chat_base_url": None,
+        "chat_model": "extractive",
+        "embedding_provider": "local",
+        "embedding_base_url": None,
+        "embedding_model": "hashing",
+        "embedding_dimensions": 384,
+        "rerank_provider": "token_overlap",
+        "query_timeout_seconds": query_timeout_seconds,
+        "ocr_languages": "未启用",
+        "max_document_mib": 20,
+    }
     app.include_router(router)
     return app
 
@@ -71,6 +86,7 @@ def create_local_app(
     composer: AnswerComposer | None = None,
     faithfulness_judge: FaithfulnessJudge | None = None,
     query_timeout_seconds: float = 60,
+    runtime_config: dict[str, str | int | float | None] | None = None,
 ) -> FastAPI:
     """Create a zero-dependency app that exercises the real RAG pipeline."""
     embedder = HashingEmbedder()
@@ -96,4 +112,5 @@ def create_local_app(
             faithfulness_judge=faithfulness_judge or HeuristicFaithfulnessJudge(),
         ),
         query_timeout_seconds=query_timeout_seconds,
+        runtime_config=runtime_config,
     )

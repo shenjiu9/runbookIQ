@@ -40,3 +40,23 @@ class Settings(BaseSettings):
     @property
     def origins(self) -> list[str]:
         return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+
+    def public_runtime_config(self) -> dict[str, str | int | float | None]:
+        """Return browser-safe runtime metadata without credentials."""
+        return {
+            "mode": self.mode,
+            "chat_provider": self.chat_provider,
+            "chat_base_url": self.chat_base_url or self.ollama_base_url,
+            "chat_model": self.chat_model,
+            "embedding_provider": self.embedding_provider,
+            "embedding_base_url": (
+                self.embedding_base_url
+                or (self.ollama_base_url if self.embedding_provider == "ollama" else None)
+            ),
+            "embedding_model": self.embedding_model,
+            "embedding_dimensions": self.embedding_dimensions,
+            "rerank_provider": self.rerank_provider,
+            "query_timeout_seconds": self.query_timeout_seconds,
+            "ocr_languages": self.ocr_languages,
+            "max_document_mib": 20,
+        }

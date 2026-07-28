@@ -2,13 +2,18 @@ import type {
   EvaluationReport,
   IngestionJob,
   KnowledgeBase,
-  QueryResponse
+  QueryResponse,
+  RuntimeConfig
 } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
   ?? (import.meta.env.DEV ? "http://127.0.0.1:8004" : "");
 
 export const QUERY_TIMEOUT_MS = 65_000;
+
+export type HealthResponse = {
+  status: string;
+};
 
 async function decode<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -51,6 +56,18 @@ export async function askRunbook(
       },
       QUERY_TIMEOUT_MS
     )
+  );
+}
+
+export async function fetchHealth(): Promise<HealthResponse> {
+  return decode<HealthResponse>(
+    await fetch(`${API_BASE_URL}/api/health`)
+  );
+}
+
+export async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
+  return decode<RuntimeConfig>(
+    await fetch(`${API_BASE_URL}/api/runtime-config`)
   );
 }
 

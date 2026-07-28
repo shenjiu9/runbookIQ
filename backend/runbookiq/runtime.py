@@ -40,6 +40,7 @@ def build_app():
                 composer=ChatAnswerComposer(chat),
                 faithfulness_judge=ChatFaithfulnessJudge(chat),
                 query_timeout_seconds=settings.query_timeout_seconds,
+                runtime_config=settings.public_runtime_config(),
             )
         return create_local_app()
 
@@ -133,6 +134,7 @@ def build_app():
         evaluator=evaluator,
         knowledge_bases=knowledge_bases,
         query_timeout_seconds=settings.query_timeout_seconds,
+        runtime_config=settings.public_runtime_config(),
     )
 
 

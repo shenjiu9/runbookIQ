@@ -7,14 +7,13 @@ import {
   FileCode2,
   FileText,
   Gauge,
-  KeyRound,
   LoaderCircle,
   Play,
-  Save,
+  ShieldCheck,
   ServerCog,
   Trash2
 } from "lucide-react";
-import type { EvaluationReport, IngestionJob, KnowledgeBase } from "../types";
+import type { EvaluationReport, IngestionJob, KnowledgeBase, RuntimeConfig } from "../types";
 
 type KnowledgeProps = {
   knowledgeBases: KnowledgeBase[];
@@ -176,28 +175,53 @@ export function EvaluationView({ report, loading, error, onRun }: EvaluationProp
   );
 }
 
-export function SettingsView() {
-  const [saved, setSaved] = useState(false);
+const providerLabels: Record<string, string> = {
+  openai_compatible: "OpenAI-compatible",
+  ollama: "Ollama",
+  fastembed: "FastEmbed",
+  chat: "对话模型重排",
+  token_overlap: "词元重叠重排",
+  local: "本地内置"
+};
+
+export function SettingsView({
+  config,
+  error
+}: {
+  config: RuntimeConfig | null;
+  error: string | null;
+}) {
   return (
-    <Section title="系统设置" eyebrow="运行时配置" description="无需修改故障调查逻辑，即可切换不同模型供应商。">
+    <Section title="系统设置" eyebrow="安全的运行时配置" description="生产配置由服务器环境变量管理，页面不展示或缓存任何 API 密钥。">
+      <section className="panel settings-notice">
+        <ShieldCheck size={22} />
+        <div>
+          <strong>配置采用只读展示</strong>
+          <p>为避免把模型密钥暴露到浏览器，供应商、模型和检索参数由服务器统一管理。下方信息来自后端脱敏接口，不包含任何 API 密钥。</p>
+        </div>
+      </section>
+      {error ? <div className="error-banner">{error}</div> : null}
       <div className="settings-grid">
         <section className="panel settings-card">
-          <div className="settings-title"><ServerCog size={19} /><span><strong>模型运行配置</strong><small>支持外部 OpenAI-compatible 模型服务</small></span></div>
-          <label>对话模型供应商<input defaultValue="openai_compatible" /></label>
-          <label>对话模型接口地址<input defaultValue="https://api.deepseek.com" /></label>
-          <label>对话模型名称<input defaultValue="deepseek-v4-flash" /></label>
-          <label>向量模型供应商<input defaultValue="ollama" /></label>
-          <label>向量模型接口地址<input defaultValue="http://ollama:11434" /></label>
-          <label>向量模型名称<input defaultValue="nomic-embed-text · 768d" /></label>
-        </section>
-        <section className="panel settings-card">
-          <div className="settings-title"><KeyRound size={19} /><span><strong>检索策略</strong><small>应用于每次故障调查</small></span></div>
-          <label>向量检索候选数<input defaultValue="50" /></label>
-          <label>关键词检索候选数<input defaultValue="50" /></label>
-          <label>重排保留数量<input defaultValue="10" /></label>
+          <div className="settings-title"><ServerCog size={20} /><span><strong>模型与检索配置</strong><small>服务器托管 · 修改后需重新部署服务</small></span></div>
+          {config ? (
+            <dl className="runtime-config-list">
+              <ConfigRow label="运行模式" value={config.mode === "production" ? "生产模式" : "本地模式"} />
+              <ConfigRow label="对话模型" value={`${providerLabels[config.chat_provider] ?? config.chat_provider} · ${config.chat_model}`} />
+              <ConfigRow label="向量模型" value={`${providerLabels[config.embedding_provider] ?? config.embedding_provider} · ${config.embedding_model} · ${config.embedding_dimensions} 维`} />
+              <ConfigRow label="重排策略" value={providerLabels[config.rerank_provider] ?? config.rerank_provider} />
+              <ConfigRow label="查询超时" value={`${config.query_timeout_seconds} 秒`} />
+              <ConfigRow label="OCR 语言" value={config.ocr_languages} />
+              <ConfigRow label="文档上限" value={`${config.max_document_mib} MiB`} />
+            </dl>
+          ) : (
+            <div className="settings-empty">
+              <strong>正在读取运行配置</strong>
+              <p>配置加载完成后会显示当前服务器实际使用的模型与检索参数。</p>
+            </div>
+          )}
         </section>
       </div>
-      <button className="investigate-button save-button" onClick={() => setSaved(true)}><Save size={14} />{saved ? "已保存到本地" : "保存配置"}</button>
     </Section>
   );
 }
@@ -223,4 +247,8 @@ function metricLabel(key: string) {
     faithfulness: "答案忠实度"
   };
   return labels[key] ?? key.replaceAll("_", " ");
+}
+
+function ConfigRow({ label, value }: { label: string; value: string }) {
+  return <div><dt>{label}</dt><dd>{value}</dd></div>;
 }

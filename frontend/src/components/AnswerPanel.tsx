@@ -1,4 +1,4 @@
-import { Copy, FileText, ThumbsDown, ThumbsUp } from "lucide-react";
+import { ClipboardCheck, Copy, FileText, SearchCheck } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Citation, QueryResponse } from "../types";
@@ -60,45 +60,57 @@ function scoreOf(citation: Citation) {
 }
 
 export function AnswerPanel({ response, selected, onSelect }: Props) {
+  const hasAnswer = Boolean(response.answer.trim());
+
   return (
     <section className="panel answer-panel">
       <div className="panel-heading answer-heading">
-        <div><span className="answer-spark">✦</span><strong>生成的排查建议</strong></div>
-        <div className="confidence">
-          <span>证据相关度</span>
-          <b>{Math.round(response.confidence * 100)}%</b>
-        </div>
+        <div><span className="answer-spark"><SearchCheck size={17} /></span><strong>调查结果</strong></div>
+        {hasAnswer ? (
+          <div className="confidence">
+            <span>证据相关度</span>
+            <b>{Math.round(response.confidence * 100)}%</b>
+          </div>
+        ) : null}
       </div>
-      <AnswerText text={response.answer} onCitationSelect={onSelect} />
-      <div className="source-table">
-        <div className="source-table-head">
-          <span>主要支撑证据</span><span>重排相关度</span>
+      {hasAnswer ? (
+        <>
+          <AnswerText text={response.answer} onCitationSelect={onSelect} />
+          <div className="source-table">
+            <div className="source-table-head">
+              <span>主要支撑证据</span><span>重排相关度</span>
+            </div>
+            {response.citations.map((citation, index) => (
+              <button
+                className={selected === index ? "source-row is-selected" : "source-row"}
+                id={`citation-${citation.number}`}
+                key={`${citation.source_id}-${citation.number}`}
+                onClick={() => onSelect(index)}
+              >
+                <span className="source-index">{citation.number}</span>
+                <FileText size={16} />
+                <span className="source-name">{citation.title}</span>
+                <code>{citation.source_url.replace(/^https?:\/\//, "").slice(0, 34)}</code>
+                <b>{scoreOf(citation).toFixed(2)}</b>
+              </button>
+            ))}
+          </div>
+          <div className="answer-footer">
+            <span>AI 生成内容可能存在误差，请在执行变更前核验关键操作。</span>
+            <button onClick={() => navigator.clipboard?.writeText(response.answer)}>
+              <Copy size={16} />复制答案
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="answer-empty">
+          <span className="empty-icon"><ClipboardCheck size={26} /></span>
+          <div>
+            <strong>等待开始调查</strong>
+            <p>输入故障现象后，系统会检索当前知识库并返回带引用的排查建议。</p>
+          </div>
         </div>
-        {response.citations.map((citation, index) => (
-          <button
-            className={selected === index ? "source-row is-selected" : "source-row"}
-            id={`citation-${citation.number}`}
-            key={`${citation.source_id}-${citation.number}`}
-            onClick={() => onSelect(index)}
-          >
-            <span className="source-index">{citation.number}</span>
-            <FileText size={14} />
-            <span className="source-name">{citation.title}</span>
-            <code>{citation.source_url.replace(/^https?:\/\//, "").slice(0, 34)}</code>
-            <b>{scoreOf(citation).toFixed(2)}</b>
-          </button>
-        ))}
-      </div>
-      <div className="answer-footer">
-        <span>AI 生成内容可能存在误差，请核验关键操作。</span>
-        <div>
-          <button><ThumbsUp size={14} />有帮助</button>
-          <button><ThumbsDown size={14} />无帮助</button>
-          <button onClick={() => navigator.clipboard?.writeText(response.answer)}>
-            <Copy size={14} />复制
-          </button>
-        </div>
-      </div>
+      )}
     </section>
   );
 }

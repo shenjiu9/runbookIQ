@@ -60,4 +60,19 @@ export type IngestionJob = {
   error: string | null;
 };
 
+export type RuntimeConfig = {
+  mode: string;
+  chat_provider: string;
+  chat_base_url: string | null;
+  chat_model: string;
+  embedding_provider: string;
+  embedding_base_url: string | null;
+  embedding_model: string;
+  embedding_dimensions: number;
+  rerank_provider: string;
+  query_timeout_seconds: number;
+  ocr_languages: string;
+  max_document_mib: number;
+};
+
 export type NavKey = "ask" | "knowledge" | "ingestion" | "evaluation" | "settings";

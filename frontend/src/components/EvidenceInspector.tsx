@@ -1,4 +1,4 @@
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, FileSearch, Route } from "lucide-react";
 import type { Citation, TraceStage } from "../types";
 
 type Props = {
@@ -46,11 +46,15 @@ export function EvidenceInspector({ citation, stages, tab, onTabChange }: Props)
           </div>
           <label>证据原文</label>
           <blockquote>{citation.excerpt}</blockquote>
-          <a className="open-source" href={citation.source_url.startsWith("http") ? citation.source_url : "#"} target="_blank" rel="noreferrer">
-            打开原始来源 <ExternalLink size={14} />
-          </a>
+          {citation.source_url.startsWith("http") ? (
+            <a className="open-source" href={citation.source_url} target="_blank" rel="noreferrer">
+              打开原始来源 <ExternalLink size={15} />
+            </a>
+          ) : (
+            <div className="local-source-note">该来源由本地文档上传，原文件链接暂不可用。</div>
+          )}
         </div>
-      ) : (
+      ) : tab === "trace" && stages.length ? (
         <div className="inspector-body">
           <span className="eyeline">查询执行过程</span>
           <h3>检索执行链路</h3>
@@ -63,6 +67,14 @@ export function EvidenceInspector({ citation, stages, tab, onTabChange }: Props)
               </div>
             ))}
           </div>
+        </div>
+      ) : (
+        <div className="inspector-empty">
+          {tab === "evidence" ? <FileSearch size={24} /> : <Route size={24} />}
+          <strong>{tab === "evidence" ? "尚未选择证据" : "尚无执行链路"}</strong>
+          <p>{tab === "evidence"
+            ? "调查完成后，可从答案引用或证据列表中查看原文。"
+            : "提交问题后，这里会显示各阶段执行详情。"}</p>
         </div>
       )}
     </aside>

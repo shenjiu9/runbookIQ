@@ -46,3 +46,18 @@ class EvaluationRunRequest(BaseModel):
         if value is None and not info.data.get("suite_id"):
             raise ValueError("suite_id or cases is required")
         return value
+
+
+class RuntimeConfigResponse(BaseModel):
+    mode: str
+    chat_provider: str
+    chat_base_url: str | None
+    chat_model: str
+    embedding_provider: str
+    embedding_base_url: str | None
+    embedding_model: str
+    embedding_dimensions: int
+    rerank_provider: str
+    query_timeout_seconds: float
+    ocr_languages: str
+    max_document_mib: int = 20

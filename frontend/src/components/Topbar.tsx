@@ -1,19 +1,31 @@
-import { Bell, ChevronDown, CircleHelp, Network } from "lucide-react";
+import { BookOpen, Network } from "lucide-react";
 
-export function Topbar() {
+export function Topbar({
+  healthy,
+  knowledgeBaseName
+}: {
+  healthy: boolean | null;
+  knowledgeBaseName: string;
+}) {
+  const healthLabel = healthy === null
+    ? "正在检查服务"
+    : healthy
+      ? "API 服务可用"
+      : "API 连接异常";
+
   return (
     <header className="topbar">
-      <button className="workspace-select">
+      <div className="workspace-context">
         <Network size={16} />
         <span>平台工程团队</span>
-        <ChevronDown size={15} />
-      </button>
+      </div>
       <div className="topbar-actions">
-        <div className="system-health"><i />系统状态</div>
-        <span className="operational">全部服务运行正常</span>
-        <button className="icon-button" aria-label="帮助"><CircleHelp size={17} /></button>
-        <button className="icon-button" aria-label="通知"><Bell size={17} /></button>
-        <button className="avatar">PE</button>
+        <div className="topbar-scope"><BookOpen size={16} />{knowledgeBaseName}</div>
+        <div className={`system-health ${healthy === false ? "is-error" : ""}`}>
+          <i />
+          <span>{healthLabel}</span>
+        </div>
+        <div className="avatar" aria-label="平台工程团队">PE</div>
       </div>
     </header>
   );

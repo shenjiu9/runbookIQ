@@ -1,4 +1,5 @@
-import { Check, Code2 } from "lucide-react";
+import { useState } from "react";
+import { Check, Code2, Route } from "lucide-react";
 import type { TraceStage } from "../types";
 
 const labels: Record<string, string> = {
@@ -10,24 +11,45 @@ const labels: Record<string, string> = {
 };
 
 export function TracePanel({ stages }: { stages: TraceStage[] }) {
+  const [showRaw, setShowRaw] = useState(false);
+
   return (
     <section className="panel trace-panel">
-      <div className="panel-heading"><strong>检索与生成链路</strong></div>
-      <div className="trace-timeline">
-        {stages.map((stage) => (
-          <div className="trace-step" key={stage.name}>
-            <div className="trace-dot"><Check size={12} /></div>
-            <strong>{labels[stage.name] ?? stage.name}</strong>
-            <span>{stage.duration_ms} 毫秒</span>
-            <small>{stage.candidate_count.toLocaleString()} 个候选项</small>
-          </div>
-        ))}
+      <div className="panel-heading">
+        <strong>检索与生成链路</strong>
+        <span>{stages.length ? `${stages.length} 个阶段` : "尚未执行"}</span>
       </div>
-      <pre className="raw-trace">{JSON.stringify({
-        retrieved: { lexical: 1204, vector: 1204, rrf: 100, rerank: 10 },
-        latency_ms: Object.fromEntries(stages.map((s) => [s.name, s.duration_ms]))
-      }, null, 2)}</pre>
-      <button className="text-action trace-action"><Code2 size={14} />查看原始链路</button>
+      {stages.length ? (
+        <>
+          <div className="trace-timeline">
+            {stages.map((stage) => (
+              <div className="trace-step" key={stage.name}>
+                <div className="trace-dot"><Check size={13} /></div>
+                <strong>{labels[stage.name] ?? stage.name}</strong>
+                <span>{stage.duration_ms} 毫秒</span>
+                <small>{stage.candidate_count.toLocaleString()} 个候选项</small>
+              </div>
+            ))}
+          </div>
+          {showRaw ? (
+            <pre className="raw-trace">{JSON.stringify({
+              stages: stages.map((stage) => ({
+                name: stage.name,
+                duration_ms: stage.duration_ms,
+                candidate_count: stage.candidate_count
+              }))
+            }, null, 2)}</pre>
+          ) : null}
+          <button className="text-action trace-action" onClick={() => setShowRaw((value) => !value)}>
+            <Code2 size={16} />{showRaw ? "收起原始链路" : "查看原始链路"}
+          </button>
+        </>
+      ) : (
+        <div className="compact-empty">
+          <Route size={20} />
+          <span>调查完成后展示每个检索阶段的真实耗时和候选数量。</span>
+        </div>
+      )}
     </section>
   );
 }

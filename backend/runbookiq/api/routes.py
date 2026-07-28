@@ -2,7 +2,12 @@ import asyncio
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
 
-from runbookiq.api.schemas import EvaluationRunRequest, KnowledgeBaseCreate, QueryRequest
+from runbookiq.api.schemas import (
+    EvaluationRunRequest,
+    KnowledgeBaseCreate,
+    QueryRequest,
+    RuntimeConfigResponse,
+)
 from runbookiq.domain.models import Answer, EvaluationReport, IngestionJob, KnowledgeBase
 from runbookiq.evaluation.benchmark import load_benchmark
 
@@ -12,6 +17,11 @@ router = APIRouter(prefix="/api")
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/runtime-config", response_model=RuntimeConfigResponse)
+async def runtime_config(request: Request) -> RuntimeConfigResponse:
+    return RuntimeConfigResponse.model_validate(request.app.state.runtime_config)
 
 
 async def _require_knowledge_base(request: Request, knowledge_base_id: str) -> None:

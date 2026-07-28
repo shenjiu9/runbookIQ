@@ -3,14 +3,15 @@ import {
   askRunbook,
   createKnowledgeBase,
   deleteKnowledgeBase,
+  fetchHealth,
   fetchLatestEvaluation,
+  fetchRuntimeConfig,
   listKnowledgeBases,
   runEvaluation,
   uploadDocument
 } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
-import { initialResponse } from "./demoData";
 import { AskView } from "./pages/AskView";
 import { EvaluationView, IngestionView, KnowledgeView, SettingsView } from "./pages/SecondaryViews";
 import type {
@@ -18,15 +19,22 @@ import type {
   IngestionJob,
   KnowledgeBase,
   NavKey,
-  QueryResponse
+  QueryResponse,
+  RuntimeConfig
 } from "./types";
 
 const defaultQuestion = "配置发布后 Deployment 进入 CrashLoopBackOff，应该优先检查什么？";
+const emptyResponse: QueryResponse = {
+  answer: "",
+  confidence: 0,
+  citations: [],
+  trace: { query_id: "", stages: [] }
+};
 
 export default function App() {
   const [active, setActive] = useState<NavKey>("ask");
   const [question, setQuestion] = useState(defaultQuestion);
-  const [response, setResponse] = useState<QueryResponse>(initialResponse);
+  const [response, setResponse] = useState<QueryResponse>(emptyResponse);
   const [selectedCitation, setSelectedCitation] = useState(0);
   const [inspectorTab, setInspectorTab] = useState<"evidence" | "trace">("evidence");
   const [queryLoading, setQueryLoading] = useState(false);
@@ -41,10 +49,18 @@ export default function App() {
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("platform");
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [systemHealthy, setSystemHealthy] = useState<boolean | null>(null);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
+  const [runtimeConfigError, setRuntimeConfigError] = useState<string | null>(null);
 
   useEffect(() => {
-    void Promise.allSettled([listKnowledgeBases(), fetchLatestEvaluation()]).then(
-      ([catalogResult, evaluationResult]) => {
+    void Promise.allSettled([
+      listKnowledgeBases(),
+      fetchLatestEvaluation(),
+      fetchHealth(),
+      fetchRuntimeConfig()
+    ]).then(
+      ([catalogResult, evaluationResult, healthResult, runtimeConfigResult]) => {
         if (catalogResult.status === "fulfilled") {
           setKnowledgeBases(catalogResult.value);
           if (!catalogResult.value.some((item) => item.id === "platform")) {
@@ -55,6 +71,14 @@ export default function App() {
         }
         if (evaluationResult.status === "fulfilled") {
           setEvaluationReport(evaluationResult.value);
+        }
+        setSystemHealthy(
+          healthResult.status === "fulfilled" && healthResult.value.status === "ok"
+        );
+        if (runtimeConfigResult.status === "fulfilled") {
+          setRuntimeConfig(runtimeConfigResult.value);
+        } else {
+          setRuntimeConfigError("运行配置读取失败");
         }
         setCatalogLoading(false);
       }
@@ -104,12 +128,7 @@ export default function App() {
 
   function selectKnowledgeBase(knowledgeBaseId: string) {
     setSelectedKnowledgeBaseId(knowledgeBaseId);
-    setResponse({
-      answer: "请在当前知识库中提交问题，系统将只使用该库的证据回答。",
-      confidence: 0,
-      citations: [],
-      trace: { query_id: "pending", stages: [] }
-    });
+    setResponse(emptyResponse);
     setSelectedCitation(0);
     setQueryError(null);
   }
@@ -150,7 +169,10 @@ export default function App() {
     <div className="app-shell">
       <Sidebar active={active} onChange={setActive} />
       <div className="app-main">
-        <Topbar />
+        <Topbar
+          healthy={systemHealthy}
+          knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"}
+        />
         <main>
           {active === "ask" ? (
             <AskView
@@ -170,6 +192,8 @@ export default function App() {
               knowledgeBases={knowledgeBases}
               selectedKnowledgeBaseId={selectedKnowledgeBaseId}
               onKnowledgeBaseChange={selectKnowledgeBase}
+              ingestionJob={ingestionJob}
+              knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"}
             />
           ) : null}
           {active === "knowledge" ? (
@@ -185,7 +209,9 @@ export default function App() {
           ) : null}
           {active === "ingestion" ? <IngestionView knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"} job={ingestionJob} loading={ingestionLoading} error={ingestionError} onUpload={ingest} /> : null}
           {active === "evaluation" ? <EvaluationView report={evaluationReport} loading={evaluationLoading} error={evaluationError} onRun={evaluate} /> : null}
-          {active === "settings" ? <SettingsView /> : null}
+          {active === "settings" ? (
+            <SettingsView config={runtimeConfig} error={runtimeConfigError} />
+          ) : null}
         </main>
       </div>
     </div>

@@ -24,9 +24,13 @@ const items: Array<{ key: NavKey; label: string; icon: LucideIcon }> = [
 export function Sidebar({ active, onChange }: Props) {
   return (
     <aside className="sidebar">
-      <button className="brand" onClick={() => onChange("ask")} aria-label="RunbookIQ 首页">
-        Runbook<span>IQ</span>
-      </button>
+      <div className="brand-wrap">
+        <button className="brand" onClick={() => onChange("ask")} aria-label="RunbookIQ 首页">
+          <span className="brand-mark">R</span>
+          <span className="brand-name">Runbook<i>IQ</i></span>
+        </button>
+        <span className="product-tag">智能运维知识台</span>
+      </div>
       <nav className="primary-nav" aria-label="主导航">
         {items.map(({ key, label, icon: Icon }) => (
           <button
@@ -34,15 +38,14 @@ export function Sidebar({ active, onChange }: Props) {
             className={active === key ? "nav-item is-active" : "nav-item"}
             onClick={() => onChange(key)}
           >
-            <Icon size={17} strokeWidth={1.7} />
+            <Icon size={19} strokeWidth={1.8} />
             <span>{label}</span>
           </button>
         ))}
       </nav>
       <div className="sidebar-meta">
-        <span className="meta-label">工作空间</span>
+        <span className="meta-label">当前工作空间</span>
         <strong>平台工程团队</strong>
-        <span className="meta-label environment-label">运行环境</span>
         <div className="environment"><i />生产环境</div>
       </div>
     </aside>

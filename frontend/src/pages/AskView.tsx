@@ -4,7 +4,7 @@ import { EvaluationSummary } from "../components/EvaluationSummary";
 import { EvidenceInspector } from "../components/EvidenceInspector";
 import { IngestionRail } from "../components/IngestionRail";
 import { TracePanel } from "../components/TracePanel";
-import type { EvaluationReport, KnowledgeBase, QueryResponse } from "../types";
+import type { EvaluationReport, IngestionJob, KnowledgeBase, QueryResponse } from "../types";
 
 type Props = {
   question: string;
@@ -23,6 +23,8 @@ type Props = {
   knowledgeBases: KnowledgeBase[];
   selectedKnowledgeBaseId: string;
   onKnowledgeBaseChange: (knowledgeBaseId: string) => void;
+  ingestionJob: IngestionJob | null;
+  knowledgeBaseName: string;
 };
 
 export function AskView({
@@ -41,13 +43,15 @@ export function AskView({
   onEvaluate,
   knowledgeBases,
   selectedKnowledgeBaseId,
-  onKnowledgeBaseChange
+  onKnowledgeBaseChange,
+  ingestionJob,
+  knowledgeBaseName
 }: Props) {
   return (
     <div className="ask-view">
       <div className="page-intro">
         <div>
-          <span className="eyeline">知识辅助运维</span>
+          <span className="eyeline">知识辅助运维 · 故障调查</span>
           <h1>调查线上故障</h1>
           <p>检索运行手册、事故复盘与平台文档，获得可追溯、可核验的排查建议。</p>
         </div>
@@ -70,9 +74,10 @@ export function AskView({
               ))}
             </select>
           </label>
-          <span>混合检索</span>
+          <span className="retrieval-mode">关键词 + 向量 + 重排</span>
         </div>
         <textarea
+          placeholder="描述故障现象、错误日志和最近变更…"
           value={question}
           onChange={(event) => onQuestionChange(event.target.value)}
           onKeyDown={(event) => {
@@ -81,7 +86,7 @@ export function AskView({
           aria-label="故障问题"
         />
         <div className="query-footer">
-          <span>按 Ctrl + Enter 开始调查</span>
+          <span>Ctrl + Enter 提交 · 回答仅引用当前知识库</span>
           <button className="investigate-button" onClick={onSubmit} disabled={loading || !question.trim() || !selectedKnowledgeBaseId}>
             {loading ? "正在调查…" : "开始调查"}<ArrowUp size={15} />
           </button>
@@ -108,7 +113,7 @@ export function AskView({
             tab={inspectorTab}
             onTabChange={onInspectorTabChange}
           />
-          <IngestionRail />
+          <IngestionRail job={ingestionJob} knowledgeBaseName={knowledgeBaseName} />
         </div>
       </div>
     </div>
