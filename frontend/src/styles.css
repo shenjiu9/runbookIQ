@@ -1430,6 +1430,11 @@ main {
   padding: 24px 26px;
 }
 
+.evaluation-hero-copy {
+  min-width: 0;
+  flex: 1;
+}
+
 .evaluation-hero h2 {
   margin: 2px 0 4px;
   font-size: 22px;
@@ -1438,6 +1443,41 @@ main {
 .evaluation-hero p {
   margin: 0;
   color: var(--muted);
+  font-size: 14px;
+}
+
+.suite-picker {
+  display: grid;
+  gap: 8px;
+  max-width: 620px;
+  margin-top: 18px;
+}
+
+.suite-picker span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.suite-picker select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 40px 0 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.suite-picker-compact {
+  max-width: none;
+  margin: 16px 16px 4px;
+}
+
+.suite-picker-compact select {
+  min-height: 40px;
   font-size: 14px;
 }
 

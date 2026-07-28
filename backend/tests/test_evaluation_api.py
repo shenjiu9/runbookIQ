@@ -30,6 +30,7 @@ class FixedEvaluator:
         ]
         self.report = EvaluationReport(
             run_id="eval-001",
+            knowledge_base_id=knowledge_base_id,
             suite_id=suite_id,
             suite_total=suite_total,
             case_count=1,
@@ -45,8 +46,10 @@ class FixedEvaluator:
         )
         return self.report
 
-    async def latest(self) -> EvaluationReport | None:
-        return self.report
+    async def latest(self, knowledge_base_id: str) -> EvaluationReport | None:
+        if self.report and self.report.knowledge_base_id == knowledge_base_id:
+            return self.report
+        return None
 
 
 @pytest.mark.asyncio
@@ -68,7 +71,10 @@ async def test_evaluation_run_returns_resume_worthy_retrieval_metrics() -> None:
                 ],
             },
         )
-        latest = await client.get("/api/evaluations/latest")
+        latest = await client.get(
+            "/api/evaluations/latest",
+            params={"knowledge_base_id": "platform"},
+        )
 
     assert response.status_code == 200
     assert response.json()["run_id"] == "eval-001"
@@ -81,3 +87,58 @@ async def test_evaluation_run_returns_resume_worthy_retrieval_metrics() -> None:
 
     assert latest.status_code == 200
     assert latest.json()["run_id"] == "eval-001"
+
+
+@pytest.mark.asyncio
+async def test_evaluation_suites_are_scoped_to_their_knowledge_base() -> None:
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        platform_suites = await client.get(
+            "/api/knowledge-bases/platform/evaluation-suites"
+        )
+        created = await client.post(
+            "/api/knowledge-bases",
+            json={"name": "星港零售门店运营", "description": "零售知识库"},
+        )
+        retail_id = created.json()["id"]
+        retail_suites = await client.get(
+            f"/api/knowledge-bases/{retail_id}/evaluation-suites"
+        )
+
+    assert platform_suites.status_code == 200
+    assert platform_suites.json() == [
+        {
+            "id": "platform-operations-v1",
+            "knowledge_base_id": "platform",
+            "name": "平台故障调查基准 v1",
+            "description": "Kubernetes、配置发布与探针事故的中英文黄金问题",
+            "case_count": 60,
+        }
+    ]
+    assert retail_suites.status_code == 200
+    assert retail_suites.json() == []
+
+
+@pytest.mark.asyncio
+async def test_platform_suite_cannot_run_against_a_retail_knowledge_base() -> None:
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        created = await client.post(
+            "/api/knowledge-bases",
+            json={"name": "星港零售门店运营", "description": "零售知识库"},
+        )
+        response = await client.post(
+            "/api/evaluations/run",
+            json={
+                "knowledge_base_id": created.json()["id"],
+                "suite_id": "platform-operations-v1",
+                "max_cases": 6,
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "该评测集不属于当前知识库，已禁止运行"

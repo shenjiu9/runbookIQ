@@ -48,8 +48,17 @@ class IngestionJob(BaseModel):
     error: str | None = None
 
 
+class EvaluationSuite(BaseModel):
+    id: str
+    knowledge_base_id: str
+    name: str
+    description: str
+    case_count: int
+
+
 class EvaluationReport(BaseModel):
     run_id: str
+    knowledge_base_id: str
     suite_id: str
     suite_total: int
     case_count: int

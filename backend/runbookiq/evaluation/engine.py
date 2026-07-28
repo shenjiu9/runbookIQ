@@ -79,7 +79,7 @@ class EvaluationEngine:
     ) -> None:
         self._investigator = investigator
         self._faithfulness_judge = faithfulness_judge
-        self._latest: EvaluationReport | None = None
+        self._latest_by_knowledge_base: dict[str, EvaluationReport] = {}
 
     async def run(
         self,
@@ -139,6 +139,7 @@ class EvaluationEngine:
 
         report = EvaluationReport(
             run_id=f"eval-{uuid4().hex[:12]}",
+            knowledge_base_id=knowledge_base_id,
             suite_id=suite_id,
             suite_total=suite_total or len(cases),
             case_count=len(cases),
@@ -159,8 +160,8 @@ class EvaluationEngine:
             },
             cases=case_results,
         )
-        self._latest = report
+        self._latest_by_knowledge_base[knowledge_base_id] = report
         return report
 
-    async def latest(self) -> EvaluationReport | None:
-        return self._latest
+    async def latest(self, knowledge_base_id: str) -> EvaluationReport | None:
+        return self._latest_by_knowledge_base.get(knowledge_base_id)

@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from runbookiq.domain.models import EvaluationSuite
+
 PLATFORM_OPERATIONS_SUITE_ID = "platform-operations-v1"
 
 CRASHLOOP_SOURCE = "src-d0ddef69082afff0"
@@ -105,18 +107,52 @@ PLATFORM_OPERATIONS_CASES = [
 ]
 
 
+PLATFORM_OPERATIONS_SUITE = EvaluationSuite(
+    id=PLATFORM_OPERATIONS_SUITE_ID,
+    knowledge_base_id="platform",
+    name="平台故障调查基准 v1",
+    description="Kubernetes、配置发布与探针事故的中英文黄金问题",
+    case_count=len(PLATFORM_OPERATIONS_CASES),
+)
+
+SUITES = {
+    PLATFORM_OPERATIONS_SUITE_ID: (
+        PLATFORM_OPERATIONS_SUITE,
+        PLATFORM_OPERATIONS_CASES,
+    )
+}
+
+
+def list_benchmarks(knowledge_base_id: str) -> list[EvaluationSuite]:
+    return [
+        suite
+        for suite, _cases_for_suite in SUITES.values()
+        if suite.knowledge_base_id == knowledge_base_id
+    ]
+
+
+def get_benchmark(suite_id: str) -> EvaluationSuite:
+    try:
+        suite, _cases_for_suite = SUITES[suite_id]
+    except KeyError as exc:
+        raise KeyError(suite_id) from exc
+    return suite
+
+
 def load_benchmark(
     suite_id: str,
     *,
     max_cases: int | None = None,
 ) -> tuple[list[dict], int]:
-    if suite_id != PLATFORM_OPERATIONS_SUITE_ID:
-        raise KeyError(suite_id)
-    if max_cases and max_cases < len(PLATFORM_OPERATIONS_CASES):
+    try:
+        _suite, suite_cases = SUITES[suite_id]
+    except KeyError as exc:
+        raise KeyError(suite_id) from exc
+    if max_cases and max_cases < len(suite_cases):
         groups = [
-            PLATFORM_OPERATIONS_CASES[0:20],
-            PLATFORM_OPERATIONS_CASES[20:40],
-            PLATFORM_OPERATIONS_CASES[40:60],
+            suite_cases[0:20],
+            suite_cases[20:40],
+            suite_cases[40:60],
         ]
         selected = [
             group[index]
@@ -125,5 +161,5 @@ def load_benchmark(
             if index < len(group)
         ][:max_cases]
     else:
-        selected = PLATFORM_OPERATIONS_CASES
-    return [case.as_dict() for case in selected], len(PLATFORM_OPERATIONS_CASES)
+        selected = suite_cases
+    return [case.as_dict() for case in selected], len(suite_cases)

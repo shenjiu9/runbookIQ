@@ -31,8 +31,17 @@ export type KnowledgeBase = {
   created_at: string;
 };
 
+export type EvaluationSuite = {
+  id: string;
+  knowledge_base_id: string;
+  name: string;
+  description: string;
+  case_count: number;
+};
+
 export type EvaluationReport = {
   run_id: string;
+  knowledge_base_id: string;
   suite_id: string;
   suite_total: number;
   case_count: number;

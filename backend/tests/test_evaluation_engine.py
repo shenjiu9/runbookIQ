@@ -66,6 +66,24 @@ async def test_evaluation_computes_retrieval_and_grounding_metrics_per_suite() -
     assert len(response.json()["cases"]) == 2
     assert response.json()["cases"][1]["first_relevant_rank"] == 2
 
-    latest = await evaluator.latest()
+    latest = await evaluator.latest("platform")
     assert latest is not None
     assert latest.run_id == response.json()["run_id"]
+
+
+@pytest.mark.asyncio
+async def test_latest_evaluation_is_isolated_by_knowledge_base() -> None:
+    evaluator = EvaluationEngine(
+        investigator=TwoQuestionInvestigator(),
+        faithfulness_judge=HeuristicFaithfulnessJudge(),
+    )
+
+    await evaluator.run(
+        knowledge_base_id="platform",
+        cases=[{"question": "logs", "expected_source_ids": ["expected-source"]}],
+        suite_id="platform-operations-v1",
+        suite_total=60,
+    )
+
+    assert await evaluator.latest("missing-retail-kb") is None
+    assert (await evaluator.latest("platform")) is not None

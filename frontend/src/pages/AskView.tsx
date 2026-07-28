@@ -4,7 +4,13 @@ import { EvaluationSummary } from "../components/EvaluationSummary";
 import { EvidenceInspector } from "../components/EvidenceInspector";
 import { IngestionRail } from "../components/IngestionRail";
 import { TracePanel } from "../components/TracePanel";
-import type { EvaluationReport, IngestionJob, KnowledgeBase, QueryResponse } from "../types";
+import type {
+  EvaluationReport,
+  EvaluationSuite,
+  IngestionJob,
+  KnowledgeBase,
+  QueryResponse
+} from "../types";
 
 type Props = {
   question: string;
@@ -18,7 +24,11 @@ type Props = {
   onInspectorTabChange: (tab: "evidence" | "trace") => void;
   onSubmit: () => void;
   evaluationReport: EvaluationReport | null;
+  evaluationSuites: EvaluationSuite[];
+  selectedEvaluationSuiteId: string;
+  evaluationCatalogLoading: boolean;
   evaluationLoading: boolean;
+  onEvaluationSuiteChange: (suiteId: string) => void;
   onEvaluate: () => void;
   knowledgeBases: KnowledgeBase[];
   selectedKnowledgeBaseId: string;
@@ -39,7 +49,11 @@ export function AskView({
   onInspectorTabChange,
   onSubmit,
   evaluationReport,
+  evaluationSuites,
+  selectedEvaluationSuiteId,
+  evaluationCatalogLoading,
   evaluationLoading,
+  onEvaluationSuiteChange,
   onEvaluate,
   knowledgeBases,
   selectedKnowledgeBaseId,
@@ -101,7 +115,11 @@ export function AskView({
             <TracePanel stages={response.trace.stages} />
             <EvaluationSummary
               report={evaluationReport}
+              suites={evaluationSuites}
+              selectedSuiteId={selectedEvaluationSuiteId}
+              catalogLoading={evaluationCatalogLoading}
               loading={evaluationLoading}
+              onSuiteChange={onEvaluationSuiteChange}
               onRun={onEvaluate}
             />
           </div>

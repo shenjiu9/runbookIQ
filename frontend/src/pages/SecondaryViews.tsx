@@ -13,7 +13,13 @@ import {
   ServerCog,
   Trash2
 } from "lucide-react";
-import type { EvaluationReport, IngestionJob, KnowledgeBase, RuntimeConfig } from "../types";
+import type {
+  EvaluationReport,
+  EvaluationSuite,
+  IngestionJob,
+  KnowledgeBase,
+  RuntimeConfig
+} from "../types";
 
 type KnowledgeProps = {
   knowledgeBases: KnowledgeBase[];
@@ -144,19 +150,72 @@ export function IngestionView({ knowledgeBaseName, job, loading, error, onUpload
 }
 
 type EvaluationProps = {
+  knowledgeBaseName: string;
+  suites: EvaluationSuite[];
+  selectedSuiteId: string;
+  catalogLoading: boolean;
   report: EvaluationReport | null;
   loading: boolean;
   error: string | null;
+  onSuiteChange: (suiteId: string) => void;
   onRun: () => void;
 };
 
-export function EvaluationView({ report, loading, error, onRun }: EvaluationProps) {
+export function EvaluationView({
+  knowledgeBaseName,
+  suites,
+  selectedSuiteId,
+  catalogLoading,
+  report,
+  loading,
+  error,
+  onSuiteChange,
+  onRun
+}: EvaluationProps) {
   const metrics = report?.metrics ?? {};
+  const selectedSuite = suites.find((suite) => suite.id === selectedSuiteId);
+  const hasSuites = suites.length > 0;
   return (
     <Section title="质量评测" eyebrow="RAG 质量门禁" description="在发布 RAG 变更前，分别衡量检索质量与答案忠实度。">
       <div className="evaluation-hero panel">
-        <div><span className="eyeline">黄金评测集</span><h2>平台故障调查基准 v1</h2><p>60 个中英文标注问题；页面默认运行跨三个知识来源的 6 个快速样本。</p></div>
-        <button className="investigate-button" onClick={onRun} disabled={loading}><Play size={14} />{loading ? "正在评测…" : "运行真实评测"}</button>
+        <div className="evaluation-hero-copy">
+          <span className="eyeline">当前知识库 · {knowledgeBaseName}</span>
+          <h2>
+            {catalogLoading
+              ? "正在加载评测配置"
+              : selectedSuite?.name ?? "尚未配置评测集"}
+          </h2>
+          <p>
+            {selectedSuite
+              ? `${selectedSuite.description}。共 ${selectedSuite.case_count} 个标注问题，本次运行 6 个快速样本。`
+              : "此知识库没有绑定黄金评测集，因此不会运行其他知识库的评测数据。"}
+          </p>
+          {hasSuites ? (
+            <label className="suite-picker">
+              <span>选择本次评测集</span>
+              <select
+                aria-label="选择评测集"
+                value={selectedSuiteId}
+                onChange={(event) => onSuiteChange(event.target.value)}
+                disabled={catalogLoading || loading}
+              >
+                {suites.map((suite) => (
+                  <option key={suite.id} value={suite.id}>
+                    {suite.name} · {suite.case_count} 题
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+        <button
+          className="investigate-button"
+          onClick={onRun}
+          disabled={loading || catalogLoading || !selectedSuiteId}
+        >
+          <Play size={14} />
+          {loading ? "正在评测…" : hasSuites ? "运行真实评测" : "尚未配置评测集"}
+        </button>
       </div>
       {error ? <div className="error-banner">{error}</div> : null}
       {report ? <div className="metric-cards">
@@ -167,9 +226,17 @@ export function EvaluationView({ report, loading, error, onRun }: EvaluationProp
             <small title={report.metric_definitions[key]}>基于 {report.case_count} 个实际用例</small>
           </section>
         ))}
-      </div> : <section className="panel evaluation-empty">尚无真实评测结果。运行后才会显示指标，不再使用演示分数。</section>}
+      </div> : (
+        <section className="panel evaluation-empty">
+          {catalogLoading
+            ? "正在读取当前知识库的评测配置…"
+            : hasSuites
+              ? "尚无真实评测结果。选择评测集并运行后才会显示指标。"
+              : "尚未配置评测集。请先为当前知识库准备独立的黄金问题与期望来源。"}
+        </section>
+      )}
       <section className="panel run-detail">
-        <BookOpenCheck size={22} /><div><strong>{report ? `评测任务 ${report.run_id}` : "尚未运行评测"}</strong><p>{report ? `${report.case_count} / ${report.suite_total} 个用例已完成，耗时 ${(report.duration_ms / 1000).toFixed(1)} 秒，裁判：${report.judge}。` : "运行快速基准，将当前检索与生成链路和后端黄金集进行对比。"}</p></div>
+        <BookOpenCheck size={22} /><div><strong>{report ? `评测任务 ${report.run_id}` : hasSuites ? "尚未运行评测" : "当前知识库没有评测集"}</strong><p>{report ? `${report.case_count} / ${report.suite_total} 个用例已完成，耗时 ${(report.duration_ms / 1000).toFixed(1)} 秒，裁判：${report.judge}。` : hasSuites ? "运行所选快速基准，将当前检索与生成链路和该知识库的黄金集进行对比。" : "系统已启用归属校验，不允许把平台运维黄金集运行到当前知识库。"}</p></div>
       </section>
     </Section>
   );

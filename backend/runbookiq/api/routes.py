@@ -8,8 +8,14 @@ from runbookiq.api.schemas import (
     QueryRequest,
     RuntimeConfigResponse,
 )
-from runbookiq.domain.models import Answer, EvaluationReport, IngestionJob, KnowledgeBase
-from runbookiq.evaluation.benchmark import load_benchmark
+from runbookiq.domain.models import (
+    Answer,
+    EvaluationReport,
+    EvaluationSuite,
+    IngestionJob,
+    KnowledgeBase,
+)
+from runbookiq.evaluation.benchmark import get_benchmark, list_benchmarks, load_benchmark
 
 router = APIRouter(prefix="/api")
 
@@ -63,6 +69,18 @@ async def delete_knowledge_base(knowledge_base_id: str, request: Request) -> Res
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/knowledge-bases/{knowledge_base_id}/evaluation-suites",
+    response_model=list[EvaluationSuite],
+)
+async def list_evaluation_suites(
+    knowledge_base_id: str,
+    request: Request,
+) -> list[EvaluationSuite]:
+    await _require_knowledge_base(request, knowledge_base_id)
+    return list_benchmarks(knowledge_base_id)
 
 
 @router.post("/query", response_model=Answer)
@@ -121,12 +139,18 @@ async def run_evaluation(
     await _require_knowledge_base(request, payload.knowledge_base_id)
     if payload.suite_id:
         try:
+            suite = get_benchmark(payload.suite_id)
             cases, suite_total = load_benchmark(
                 payload.suite_id,
                 max_cases=payload.max_cases,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="evaluation suite not found") from exc
+        if suite.knowledge_base_id != payload.knowledge_base_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="该评测集不属于当前知识库，已禁止运行",
+            )
         suite_id = payload.suite_id
     else:
         cases = [case.model_dump(exclude_none=True) for case in payload.cases or []]
@@ -141,5 +165,9 @@ async def run_evaluation(
 
 
 @router.get("/evaluations/latest", response_model=EvaluationReport | None)
-async def latest_evaluation(request: Request) -> EvaluationReport | None:
-    return await request.app.state.evaluator.latest()
+async def latest_evaluation(
+    knowledge_base_id: str,
+    request: Request,
+) -> EvaluationReport | None:
+    await _require_knowledge_base(request, knowledge_base_id)
+    return await request.app.state.evaluator.latest(knowledge_base_id)

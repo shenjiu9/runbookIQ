@@ -24,7 +24,9 @@ Tests exercise behavior only through:
 2. `POST /api/query`
 3. `POST /api/documents`
 4. `GET /api/ingestion/jobs/{job_id}`
-5. `POST /api/evaluations/run`
+5. `GET /api/knowledge-bases/{knowledge_base_id}/evaluation-suites`
+6. `POST /api/evaluations/run`
+7. `GET /api/evaluations/latest?knowledge_base_id={knowledge_base_id}`
 
 The database, embedding model, reranker, object store, queue, and chat model are external seams
 with production and in-memory adapters.

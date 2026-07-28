@@ -1,5 +1,6 @@
 import type {
   EvaluationReport,
+  EvaluationSuite,
   IngestionJob,
   KnowledgeBase,
   QueryResponse,
@@ -83,23 +84,40 @@ export async function uploadDocument(
   );
 }
 
-export async function runEvaluation(knowledgeBaseId: string): Promise<EvaluationReport> {
+export async function listEvaluationSuites(
+  knowledgeBaseId: string
+): Promise<EvaluationSuite[]> {
+  return decode<EvaluationSuite[]>(
+    await fetch(
+      `${API_BASE_URL}/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/evaluation-suites`
+    )
+  );
+}
+
+export async function runEvaluation(
+  knowledgeBaseId: string,
+  suiteId: string
+): Promise<EvaluationReport> {
   return decode<EvaluationReport>(
     await fetch(`${API_BASE_URL}/api/evaluations/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         knowledge_base_id: knowledgeBaseId,
-        suite_id: "platform-operations-v1",
+        suite_id: suiteId,
         max_cases: 6
       })
     })
   );
 }
 
-export async function fetchLatestEvaluation(): Promise<EvaluationReport | null> {
+export async function fetchLatestEvaluation(
+  knowledgeBaseId: string
+): Promise<EvaluationReport | null> {
   return decode<EvaluationReport | null>(
-    await fetch(`${API_BASE_URL}/api/evaluations/latest`)
+    await fetch(
+      `${API_BASE_URL}/api/evaluations/latest?knowledge_base_id=${encodeURIComponent(knowledgeBaseId)}`
+    )
   );
 }
 

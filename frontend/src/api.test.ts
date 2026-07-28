@@ -4,9 +4,12 @@ import {
   askRunbook,
   createKnowledgeBase,
   deleteKnowledgeBase,
+  fetchLatestEvaluation,
   fetchRuntimeConfig,
+  listEvaluationSuites,
   listKnowledgeBases,
-  QUERY_TIMEOUT_MS
+  QUERY_TIMEOUT_MS,
+  runEvaluation
 } from "./api";
 
 describe("askRunbook", () => {
@@ -119,6 +122,66 @@ describe("askRunbook", () => {
     expect(await fetchRuntimeConfig()).toEqual(runtimeConfig);
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:8004/api/runtime-config"
+    );
+  });
+
+  it("loads and runs only an explicitly selected suite for the current knowledge base", async () => {
+    const suite = {
+      id: "retail-operations-v1",
+      knowledge_base_id: "kb-retail",
+      name: "零售运营基准 v1",
+      description: "冷链与门店运营黄金问题",
+      case_count: 20
+    };
+    const report = {
+      run_id: "eval-retail",
+      knowledge_base_id: "kb-retail",
+      suite_id: suite.id,
+      suite_total: 20,
+      case_count: 6,
+      evaluated_at: "2026-07-28T00:00:00Z",
+      duration_ms: 100,
+      judge: "fixed",
+      metrics: {},
+      metric_definitions: {},
+      cases: []
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([suite]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(report), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(report), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await listEvaluationSuites("kb-retail")).toEqual([suite]);
+    expect(await runEvaluation("kb-retail", "retail-operations-v1")).toEqual(report);
+    expect(await fetchLatestEvaluation("kb-retail")).toEqual(report);
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://127.0.0.1:8004/api/knowledge-bases/kb-retail/evaluation-suites"
+    );
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      knowledge_base_id: "kb-retail",
+      suite_id: "retail-operations-v1",
+      max_cases: 6
+    });
+    expect(fetchMock.mock.calls[2][0]).toBe(
+      "http://127.0.0.1:8004/api/evaluations/latest?knowledge_base_id=kb-retail"
     );
   });
 });

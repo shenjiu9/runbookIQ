@@ -84,7 +84,7 @@ class InMemoryIngestion:
 
 class DemoEvaluator:
     def __init__(self) -> None:
-        self._latest: EvaluationReport | None = None
+        self._latest_by_knowledge_base: dict[str, EvaluationReport] = {}
 
     async def run(
         self,
@@ -94,9 +94,9 @@ class DemoEvaluator:
         suite_id: str,
         suite_total: int,
     ) -> EvaluationReport:
-        del knowledge_base_id
-        self._latest = EvaluationReport(
+        report = EvaluationReport(
             run_id=f"eval-{uuid4().hex[:10]}",
+            knowledge_base_id=knowledge_base_id,
             suite_id=suite_id,
             suite_total=suite_total,
             case_count=len(cases),
@@ -110,7 +110,8 @@ class DemoEvaluator:
                 "faithfulness": 0.92,
             },
         )
-        return self._latest
+        self._latest_by_knowledge_base[knowledge_base_id] = report
+        return report
 
-    async def latest(self) -> EvaluationReport | None:
-        return self._latest
+    async def latest(self, knowledge_base_id: str) -> EvaluationReport | None:
+        return self._latest_by_knowledge_base.get(knowledge_base_id)

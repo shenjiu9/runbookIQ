@@ -6,6 +6,7 @@ import {
   fetchHealth,
   fetchLatestEvaluation,
   fetchRuntimeConfig,
+  listEvaluationSuites,
   listKnowledgeBases,
   runEvaluation,
   uploadDocument
@@ -16,6 +17,7 @@ import { AskView } from "./pages/AskView";
 import { EvaluationView, IngestionView, KnowledgeView, SettingsView } from "./pages/SecondaryViews";
 import type {
   EvaluationReport,
+  EvaluationSuite,
   IngestionJob,
   KnowledgeBase,
   NavKey,
@@ -43,6 +45,9 @@ export default function App() {
   const [ingestionLoading, setIngestionLoading] = useState(false);
   const [ingestionError, setIngestionError] = useState<string | null>(null);
   const [evaluationReport, setEvaluationReport] = useState<EvaluationReport | null>(null);
+  const [evaluationSuites, setEvaluationSuites] = useState<EvaluationSuite[]>([]);
+  const [selectedEvaluationSuiteId, setSelectedEvaluationSuiteId] = useState("");
+  const [evaluationCatalogLoading, setEvaluationCatalogLoading] = useState(false);
   const [evaluationLoading, setEvaluationLoading] = useState(false);
   const [evaluationError, setEvaluationError] = useState<string | null>(null);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
@@ -56,11 +61,10 @@ export default function App() {
   useEffect(() => {
     void Promise.allSettled([
       listKnowledgeBases(),
-      fetchLatestEvaluation(),
       fetchHealth(),
       fetchRuntimeConfig()
     ]).then(
-      ([catalogResult, evaluationResult, healthResult, runtimeConfigResult]) => {
+      ([catalogResult, healthResult, runtimeConfigResult]) => {
         if (catalogResult.status === "fulfilled") {
           setKnowledgeBases(catalogResult.value);
           if (!catalogResult.value.some((item) => item.id === "platform")) {
@@ -68,9 +72,6 @@ export default function App() {
           }
         } else {
           setCatalogError("知识库目录加载失败");
-        }
-        if (evaluationResult.status === "fulfilled") {
-          setEvaluationReport(evaluationResult.value);
         }
         setSystemHealthy(
           healthResult.status === "fulfilled" && healthResult.value.status === "ok"
@@ -84,6 +85,47 @@ export default function App() {
       }
     );
   }, []);
+
+  useEffect(() => {
+    if (!selectedKnowledgeBaseId) {
+      setEvaluationSuites([]);
+      setSelectedEvaluationSuiteId("");
+      setEvaluationReport(null);
+      return;
+    }
+
+    let cancelled = false;
+    setEvaluationCatalogLoading(true);
+    setEvaluationError(null);
+    setEvaluationSuites([]);
+    setSelectedEvaluationSuiteId("");
+    setEvaluationReport(null);
+
+    void Promise.allSettled([
+      listEvaluationSuites(selectedKnowledgeBaseId),
+      fetchLatestEvaluation(selectedKnowledgeBaseId)
+    ]).then(([suitesResult, latestResult]) => {
+      if (cancelled) return;
+      if (suitesResult.status === "fulfilled") {
+        const suites = suitesResult.value;
+        const latest = latestResult.status === "fulfilled" ? latestResult.value : null;
+        setEvaluationSuites(suites);
+        setEvaluationReport(latest);
+        setSelectedEvaluationSuiteId(
+          suites.some((suite) => suite.id === latest?.suite_id)
+            ? latest?.suite_id ?? ""
+            : suites[0]?.id ?? ""
+        );
+      } else {
+        setEvaluationError("评测集目录加载失败");
+      }
+      setEvaluationCatalogLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedKnowledgeBaseId]);
 
   async function investigate() {
     if (!selectedKnowledgeBaseId) return;
@@ -114,11 +156,13 @@ export default function App() {
   }
 
   async function evaluate() {
-    if (!selectedKnowledgeBaseId) return;
+    if (!selectedKnowledgeBaseId || !selectedEvaluationSuiteId) return;
     setEvaluationLoading(true);
     setEvaluationError(null);
     try {
-      setEvaluationReport(await runEvaluation(selectedKnowledgeBaseId));
+      setEvaluationReport(
+        await runEvaluation(selectedKnowledgeBaseId, selectedEvaluationSuiteId)
+      );
     } catch (error) {
       setEvaluationError(error instanceof Error ? error.message : "质量评测失败");
     } finally {
@@ -187,7 +231,11 @@ export default function App() {
               onInspectorTabChange={setInspectorTab}
               onSubmit={investigate}
               evaluationReport={evaluationReport}
+              evaluationSuites={evaluationSuites}
+              selectedEvaluationSuiteId={selectedEvaluationSuiteId}
+              evaluationCatalogLoading={evaluationCatalogLoading}
               evaluationLoading={evaluationLoading}
+              onEvaluationSuiteChange={setSelectedEvaluationSuiteId}
               onEvaluate={evaluate}
               knowledgeBases={knowledgeBases}
               selectedKnowledgeBaseId={selectedKnowledgeBaseId}
@@ -208,7 +256,19 @@ export default function App() {
             />
           ) : null}
           {active === "ingestion" ? <IngestionView knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"} job={ingestionJob} loading={ingestionLoading} error={ingestionError} onUpload={ingest} /> : null}
-          {active === "evaluation" ? <EvaluationView report={evaluationReport} loading={evaluationLoading} error={evaluationError} onRun={evaluate} /> : null}
+          {active === "evaluation" ? (
+            <EvaluationView
+              knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"}
+              suites={evaluationSuites}
+              selectedSuiteId={selectedEvaluationSuiteId}
+              catalogLoading={evaluationCatalogLoading}
+              report={evaluationReport}
+              loading={evaluationLoading}
+              error={evaluationError}
+              onSuiteChange={setSelectedEvaluationSuiteId}
+              onRun={evaluate}
+            />
+          ) : null}
           {active === "settings" ? (
             <SettingsView config={runtimeConfig} error={runtimeConfigError} />
           ) : null}
