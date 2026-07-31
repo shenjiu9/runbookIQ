@@ -66,16 +66,22 @@ jobs:
           DEPLOY_USER: ${{ secrets.TOKYO_DEPLOY_USER }}
           DEPLOY_SSH_KEY: ${{ secrets.TOKYO_DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.TOKYO_KNOWN_HOSTS }}
+          TURNSTILE_SITE_KEY: ${{ secrets.RUNBOOKIQ_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.RUNBOOKIQ_TURNSTILE_SECRET_KEY }}
         run: |
           missing=()
           [[ -n "${DEPLOY_HOST}" ]] || missing+=("TOKYO_DEPLOY_HOST")
           [[ -n "${DEPLOY_USER}" ]] || missing+=("TOKYO_DEPLOY_USER")
           [[ -n "${DEPLOY_SSH_KEY}" ]] || missing+=("TOKYO_DEPLOY_SSH_KEY")
           [[ -n "${DEPLOY_KNOWN_HOSTS}" ]] || missing+=("TOKYO_KNOWN_HOSTS")
+          [[ -n "${TURNSTILE_SITE_KEY}" ]] || missing+=("RUNBOOKIQ_TURNSTILE_SITE_KEY")
+          [[ -n "${TURNSTILE_SECRET_KEY}" ]] || missing+=("RUNBOOKIQ_TURNSTILE_SECRET_KEY")
           if (( ${#missing[@]} > 0 )); then
             printf '缺少 production Environment secret: %s\n' "${missing[*]}" >&2
             exit 1
           fi
+          [[ "${TURNSTILE_SITE_KEY}" =~ ^0x[A-Za-z0-9_-]{20,}$ ]]
+          [[ "${TURNSTILE_SECRET_KEY}" =~ ^0x[A-Za-z0-9_-]{30,}$ ]]
       - name: Configure deployment SSH identity
         env:
           DEPLOY_SSH_KEY: ${{ secrets.TOKYO_DEPLOY_SSH_KEY }}
@@ -86,6 +92,19 @@ jobs:
           chmod 600 ~/.ssh/runbookiq-deploy
           printf '%s\n' "${DEPLOY_KNOWN_HOSTS}" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+      - name: Build protected runtime configuration
+        env:
+          TURNSTILE_SITE_KEY: ${{ secrets.RUNBOOKIQ_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.RUNBOOKIQ_TURNSTILE_SECRET_KEY }}
+        run: |
+          umask 077
+          runtime_env="/tmp/runbookiq-runtime-${GITHUB_SHA}.env"
+          {
+            printf 'RUNBOOKIQ_TURNSTILE_SITE_KEY=%s\n' "${TURNSTILE_SITE_KEY}"
+            printf 'RUNBOOKIQ_TURNSTILE_SECRET_KEY=%s\n' "${TURNSTILE_SECRET_KEY}"
+            printf 'RUNBOOKIQ_TURNSTILE_REQUIRED=true\n'
+          } > "${runtime_env}"
+          chmod 600 "${runtime_env}"
       - name: Upload and activate release
         env:
           DEPLOY_HOST: ${{ secrets.TOKYO_DEPLOY_HOST }}
@@ -103,6 +122,15 @@ jobs:
           scp "${ssh_options[@]}" \
             "/tmp/runbookiq-${GITHUB_SHA}.tar.gz" \
             "${target}:runbookiq/inbox/${GITHUB_SHA}.tar.gz"
+          scp "${ssh_options[@]}" \
+            scripts/apply-runtime-secrets.sh \
+            "/tmp/runbookiq-runtime-${GITHUB_SHA}.env" \
+            "${target}:runbookiq/inbox/"
+          ssh "${ssh_options[@]}" "${target}" \
+            "chmod 0700 ~/runbookiq/inbox/apply-runtime-secrets.sh && \
+              chmod 0600 ~/runbookiq/inbox/runbookiq-runtime-${GITHUB_SHA}.env && \
+              bash ~/runbookiq/inbox/apply-runtime-secrets.sh \
+                ~/runbookiq/inbox/runbookiq-runtime-${GITHUB_SHA}.env"
           ssh "${ssh_options[@]}" "${target}" \
             "bash ~/runbookiq/bin/deploy-release.sh \
               ~/runbookiq/inbox/${GITHUB_SHA}.tar.gz ${GITHUB_SHA}"
@@ -112,7 +140,11 @@ jobs:
           ssh "${ssh_options[@]}" "${target}" \
             "install -m 0750 \
               ~/runbookiq/current/scripts/deploy-release.sh \
-              ~/runbookiq/bin/deploy-release.sh"
+              ~/runbookiq/bin/deploy-release.sh && \
+             install -m 0750 \
+              ~/runbookiq/current/scripts/apply-runtime-secrets.sh \
+              ~/runbookiq/bin/apply-runtime-secrets.sh && \
+             rm -f ~/runbookiq/inbox/apply-runtime-secrets.sh"
       - name: Verify public production endpoint
         run: |
           curl --fail --silent --show-error \
@@ -131,3 +163,4 @@ jobs:
         run: |
           rm -f ~/.ssh/runbookiq-deploy
           rm -f "/tmp/runbookiq-${GITHUB_SHA}.tar.gz"
+          rm -f "/tmp/runbookiq-runtime-${GITHUB_SHA}.env"
