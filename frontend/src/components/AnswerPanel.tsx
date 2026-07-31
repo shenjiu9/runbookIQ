@@ -65,7 +65,7 @@ export function AnswerPanel({ response, selected, onSelect }: Props) {
   return (
     <section className="panel answer-panel">
       <div className="panel-heading answer-heading">
-        <div><span className="answer-spark"><SearchCheck size={17} /></span><strong>调查结果</strong></div>
+        <div><span className="answer-spark"><SearchCheck size={17} /></span><strong>知识库回答</strong></div>
         {hasAnswer ? (
           <div className="confidence">
             <span>证据相关度</span>
@@ -106,8 +106,8 @@ export function AnswerPanel({ response, selected, onSelect }: Props) {
         <div className="answer-empty">
           <span className="empty-icon"><ClipboardCheck size={26} /></span>
           <div>
-            <strong>等待开始调查</strong>
-            <p>输入故障现象后，系统会检索当前知识库并返回带引用的排查建议。</p>
+            <strong>输入问题开始检索</strong>
+            <p>系统会检索当前知识库，并返回带原文引用的可核验回答。</p>
           </div>
         </div>
       )}

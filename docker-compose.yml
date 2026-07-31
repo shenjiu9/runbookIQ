@@ -107,12 +107,14 @@ services:
     volumes:
       - ./infra/postgres/002-tenancy.sql:/migrations/002-tenancy.sql:ro
       - ./infra/postgres/003-organization-invitations.sql:/migrations/003-organization-invitations.sql:ro
+      - ./infra/postgres/004-organization-branding.sql:/migrations/004-organization-branding.sql:ro
     command:
       - /bin/sh
       - -c
       - >-
         psql -v ON_ERROR_STOP=1 -f /migrations/002-tenancy.sql &&
-        psql -v ON_ERROR_STOP=1 -f /migrations/003-organization-invitations.sql
+        psql -v ON_ERROR_STOP=1 -f /migrations/003-organization-invitations.sql &&
+        psql -v ON_ERROR_STOP=1 -f /migrations/004-organization-branding.sql
     depends_on:
       postgres:
         condition: service_healthy

@@ -22,7 +22,6 @@ export function AuthView({ onAuthenticated }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [organizationName, setOrganizationName] = useState("");
-  const [slug, setSlug] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,8 +47,7 @@ export function AuthView({ onAuthenticated }: Props) {
           : await register({
               email,
               password,
-              organization_name: organizationName,
-              slug
+              organization_name: organizationName
             });
       if (invitationToken && typeof window !== "undefined") {
         window.history.replaceState({}, "", window.location.pathname);
@@ -69,11 +67,11 @@ export function AuthView({ onAuthenticated }: Props) {
           <span className="brand-mark">R</span>
           <span className="brand-name">Runbook<i>IQ</i></span>
         </div>
-        <p className="eyebrow">企业级知识库与可信问答</p>
-        <h1>让企业知识真正成为每个人都能使用的生产力。</h1>
+        <p className="eyebrow">一个入口 · 独立企业空间</p>
+        <h1>把散落的企业资料，变成可核验的知识生产力。</h1>
         <p className="auth-description">
           上传制度、手册和业务资料，自动完成解析、检索与证据引用。
-          每个企业拥有独立空间、专属网址和严格隔离的数据。
+          所有成员从同一入口登录，系统会安全地进入所属企业空间。
         </p>
         <ul className="auth-benefits">
           <li><CheckCircle2 size={20} />回答附带可核验的原文证据</li>
@@ -131,7 +129,7 @@ export function AuthView({ onAuthenticated }: Props) {
                     : "请检查邀请链接是否完整或联系企业管理员。"
                 : mode === "login"
                   ? "登录后继续管理企业知识。"
-                  : "注册成功后将自动生成专属企业网址。"}
+                  : "无需配置域名，注册完成即可开始上传企业资料。"}
             </p>
           </div>
         </div>
@@ -159,21 +157,6 @@ export function AuthView({ onAuthenticated }: Props) {
                     onChange={(event) => setOrganizationName(event.target.value)}
                     placeholder="例如：星港零售有限公司"
                   />
-                </div>
-              </label>
-              <label>
-                <span>企业网址标识</span>
-                <div className="slug-input">
-                  <input
-                    required
-                    minLength={2}
-                    maxLength={32}
-                    pattern="[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?"
-                    value={slug}
-                    onChange={(event) => setSlug(event.target.value.toLowerCase())}
-                    placeholder="xinggang"
-                  />
-                  <span>.rag.墩bang妮.top</span>
                 </div>
               </label>
             </>

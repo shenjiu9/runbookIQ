@@ -7,12 +7,17 @@ class RegistrationRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=12, max_length=200)
     organization_name: str = Field(min_length=2, max_length=120)
-    slug: str = Field(min_length=2, max_length=32)
+    slug: str | None = Field(default=None, min_length=2, max_length=32)
 
-    @field_validator("email", "organization_name", "slug")
+    @field_validator("email", "organization_name")
     @classmethod
     def trim_registration_text(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("slug")
+    @classmethod
+    def trim_optional_slug(cls, value: str | None) -> str | None:
+        return value.strip() if value else None
 
     @field_validator("email")
     @classmethod
@@ -60,6 +65,29 @@ class InvitationAcceptRequest(BaseModel):
 
 class InvitationPreviewRequest(BaseModel):
     token: str = Field(min_length=20, max_length=200)
+
+
+class OrganizationBrandingUpdate(BaseModel):
+    display_name: str = Field(min_length=2, max_length=80)
+    logo_url: str | None = Field(default=None, max_length=500)
+    primary_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    welcome_title: str = Field(min_length=2, max_length=80)
+    welcome_message: str = Field(min_length=2, max_length=240)
+
+    @field_validator("display_name", "welcome_title", "welcome_message")
+    @classmethod
+    def trim_branding_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("logo_url")
+    @classmethod
+    def validate_logo_url(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value else None
+        if not normalized:
+            return None
+        if not normalized.startswith(("https://", "/")):
+            raise ValueError("logo_url must be an HTTPS URL or a site-relative path")
+        return normalized
 
 
 class KnowledgeBaseCreate(BaseModel):

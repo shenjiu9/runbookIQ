@@ -36,6 +36,8 @@ type Props = {
   onKnowledgeBaseChange: (knowledgeBaseId: string) => void;
   ingestionJob: IngestionJob | null;
   knowledgeBaseName: string;
+  welcomeTitle: string;
+  welcomeMessage: string;
 };
 
 export function AskView({
@@ -61,15 +63,17 @@ export function AskView({
   selectedKnowledgeBaseId,
   onKnowledgeBaseChange,
   ingestionJob,
-  knowledgeBaseName
+  knowledgeBaseName,
+  welcomeTitle,
+  welcomeMessage
 }: Props) {
   return (
     <div className="ask-view">
       <div className="page-intro">
         <div>
-          <span className="eyeline">知识辅助运维 · 故障调查</span>
-          <h1>调查线上故障</h1>
-          <p>检索运行手册、事故复盘与平台文档，获得可追溯、可核验的排查建议。</p>
+          <span className="eyeline">企业知识 · 证据问答</span>
+          <h1>{welcomeTitle}</h1>
+          <p>{welcomeMessage}</p>
         </div>
         <div className="scope-badge"><ShieldCheck size={15} />仅基于证据回答</div>
       </div>
@@ -93,18 +97,18 @@ export function AskView({
           <span className="retrieval-mode">关键词 + 向量 + 重排</span>
         </div>
         <textarea
-          placeholder="描述故障现象、错误日志和最近变更…"
+          placeholder="输入具体问题，系统会从当前知识库中检索证据…"
           value={question}
           onChange={(event) => onQuestionChange(event.target.value)}
           onKeyDown={(event) => {
             if ((event.metaKey || event.ctrlKey) && event.key === "Enter") onSubmit();
           }}
-          aria-label="故障问题"
+          aria-label="知识库问题"
         />
         <div className="query-footer">
           <span>Ctrl + Enter 提交 · 回答仅引用当前知识库</span>
           <button className="investigate-button" onClick={onSubmit} disabled={loading || !question.trim() || !selectedKnowledgeBaseId}>
-            {loading ? "正在调查…" : "开始调查"}<ArrowUp size={15} />
+            {loading ? "正在检索并生成…" : "提交问题"}<ArrowUp size={15} />
           </button>
         </div>
       </div>

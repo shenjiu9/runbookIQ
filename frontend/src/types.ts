@@ -84,6 +84,14 @@ export type RuntimeConfig = {
   max_document_mib: number;
 };
 
+export type OrganizationBranding = {
+  display_name: string;
+  logo_url: string | null;
+  primary_color: string;
+  welcome_title: string;
+  welcome_message: string;
+};
+
 export type TenantContext = {
   user: {
     id: string;
@@ -94,6 +102,7 @@ export type TenantContext = {
     name: string;
     slug: string;
     url: string;
+    branding: OrganizationBranding;
   };
   role: "owner" | "admin" | "editor" | "viewer";
 };
@@ -132,7 +141,6 @@ export type RegistrationInput = {
   email: string;
   password: string;
   organization_name: string;
-  slug: string;
 };
 
 export type NavKey =

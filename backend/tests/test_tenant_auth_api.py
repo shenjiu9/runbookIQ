@@ -10,17 +10,16 @@ async def _register(
     *,
     email: str,
     organization_name: str,
-    slug: str,
+    slug: str | None = None,
 ) -> httpx.Response:
-    response = await client.post(
-        "/api/auth/register",
-        json={
-            "email": email,
-            "password": "Strong-password-2026",
-            "organization_name": organization_name,
-            "slug": slug,
-        },
-    )
+    payload = {
+        "email": email,
+        "password": "Strong-password-2026",
+        "organization_name": organization_name,
+    }
+    if slug:
+        payload["slug"] = slug
+    response = await client.post("/api/auth/register", json=payload)
     assert response.status_code == 201
     client.headers["X-CSRF-Token"] = client.cookies["runbookiq_csrf"]
     return response
@@ -44,7 +43,6 @@ async def test_registration_creates_an_authenticated_enterprise_session() -> Non
             client,
             email="owner@alpha.example",
             organization_name="Alpha Manufacturing",
-            slug="alpha",
         )
         current = await client.get("/api/auth/me")
         knowledge_bases = await client.get("/api/knowledge-bases")
@@ -54,13 +52,14 @@ async def test_registration_creates_an_authenticated_enterprise_session() -> Non
     registered = registration.json()
     assert registered["user"]["email"] == "owner@alpha.example"
     assert registered["organization"]["name"] == "Alpha Manufacturing"
-    assert registered["organization"]["slug"] == "alpha"
-    assert registered["organization"]["url"] == "https://alpha.knowledge.test"
+    assert registered["organization"]["slug"].startswith("alpha-manufacturing-")
+    assert registered["organization"]["branding"]["display_name"] == "Alpha Manufacturing"
+    assert registered["organization"]["url"] == "https://knowledge.test"
     assert registered["role"] == "owner"
     assert "HttpOnly" in registration.headers["set-cookie"]
     assert "runbookiq_csrf=" in registration.headers["set-cookie"]
     assert current.status_code == 200
-    assert current.json()["organization"]["slug"] == "alpha"
+    assert current.json()["organization"]["url"] == "https://knowledge.test"
     assert knowledge_bases.status_code == 200
     assert [(item["name"], item["description"]) for item in knowledge_bases.json()] == [
         ("Alpha Manufacturing 企业知识库", "企业制度、手册与业务资料")
@@ -87,7 +86,6 @@ async def test_owner_can_invite_a_colleague_into_the_same_enterprise() -> None:
             owner,
             email="owner@alpha.example",
             organization_name="Alpha Manufacturing",
-            slug="alpha",
         )
         created = await owner.post(
             "/api/organization/invitations",
@@ -97,9 +95,7 @@ async def test_owner_can_invite_a_colleague_into_the_same_enterprise() -> None:
         invitation = created.json()
         assert invitation["email"] == "analyst@alpha.example"
         assert invitation["role"] == "viewer"
-        assert invitation["accept_url"].startswith(
-            "https://alpha.knowledge.test/#invite="
-        )
+        assert invitation["accept_url"].startswith("https://knowledge.test/#invite=")
 
         members_before_acceptance = await owner.get("/api/organization/members")
         pending_before_acceptance = await owner.get(
@@ -108,7 +104,7 @@ async def test_owner_can_invite_a_colleague_into_the_same_enterprise() -> None:
 
     async with httpx.AsyncClient(
         transport=transport,
-        base_url="https://alpha.knowledge.test",
+        base_url="https://knowledge.test",
     ) as invited:
         preview = await invited.post(
             "/api/auth/invitations/preview",
@@ -142,7 +138,7 @@ async def test_owner_can_invite_a_colleague_into_the_same_enterprise() -> None:
     assert accepted.status_code == 200
     assert accepted.json()["role"] == "viewer"
     assert current.status_code == 200
-    assert current.json()["organization"]["slug"] == "alpha"
+    assert current.json()["organization"]["url"] == "https://knowledge.test"
     assert len(knowledge_bases.json()) == 1
     assert rejected_write.status_code == 403
     assert rejected_write.json()["detail"] == "当前角色无权执行此操作"
@@ -177,7 +173,7 @@ async def test_invitation_is_one_time_and_disappears_after_acceptance() -> None:
 
     async with httpx.AsyncClient(
         transport=transport,
-        base_url="https://alpha.knowledge.test",
+        base_url="https://knowledge.test",
     ) as invited:
         first = await invited.post(
             "/api/auth/invitations/accept",
@@ -288,7 +284,7 @@ async def test_enterprises_cannot_access_each_others_knowledge_bases() -> None:
 
 
 @pytest.mark.asyncio
-async def test_user_cannot_log_in_through_another_enterprises_domain() -> None:
+async def test_all_enterprises_log_in_through_the_same_public_domain() -> None:
     app = create_local_app(
         tenant_access=InMemoryTenantAccess(
             authentication_required=True,
@@ -317,9 +313,9 @@ async def test_user_cannot_log_in_through_another_enterprises_domain() -> None:
 
     async with httpx.AsyncClient(
         transport=transport,
-        base_url="https://alpha.knowledge.test",
-    ) as wrong_domain:
-        rejected = await wrong_domain.post(
+        base_url="https://knowledge.test",
+    ) as public_entry:
+        accepted = await public_entry.post(
             "/api/auth/login",
             json={
                 "email": "owner@beta.example",
@@ -327,8 +323,9 @@ async def test_user_cannot_log_in_through_another_enterprises_domain() -> None:
             },
         )
 
-    assert rejected.status_code == 403
-    assert rejected.json()["detail"] == "该账号不属于当前企业网址"
+    assert accepted.status_code == 200
+    assert accepted.json()["organization"]["name"] == "Beta Retail"
+    assert accepted.json()["organization"]["url"] == "https://knowledge.test"
 
 
 @pytest.mark.asyncio
@@ -362,6 +359,74 @@ async def test_tls_is_only_authorized_for_registered_enterprise_domains() -> Non
 
     assert registered.status_code == 200
     assert unknown.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_owner_can_brand_the_enterprise_and_viewer_cannot() -> None:
+    app = create_local_app(
+        tenant_access=InMemoryTenantAccess(
+            authentication_required=True,
+            root_domain="knowledge.test",
+        )
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://knowledge.test",
+    ) as owner:
+        await _register(
+            owner,
+            email="owner@alpha.example",
+            organization_name="Alpha Manufacturing",
+        )
+        updated = await owner.patch(
+            "/api/organization/branding",
+            json={
+                "display_name": "Alpha 知识中心",
+                "logo_url": "https://assets.example.com/alpha.png",
+                "primary_color": "#335CFF",
+                "welcome_title": "欢迎进入 Alpha 知识中心",
+                "welcome_message": "检索制度、产品和业务资料，答案均附带原文证据。",
+            },
+        )
+        current = await owner.get("/api/auth/me")
+        invitation = (
+            await owner.post(
+                "/api/organization/invitations",
+                json={"email": "viewer@alpha.example", "role": "viewer"},
+            )
+        ).json()
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://knowledge.test",
+    ) as viewer:
+        accepted = await viewer.post(
+            "/api/auth/invitations/accept",
+            json={
+                "token": invitation["token"],
+                "password": "Invited-password-2026",
+            },
+        )
+        viewer.headers["X-CSRF-Token"] = viewer.cookies["runbookiq_csrf"]
+        rejected = await viewer.patch(
+            "/api/organization/branding",
+            json={
+                "display_name": "Unauthorized change",
+                "logo_url": None,
+                "primary_color": "#000000",
+                "welcome_title": "Unauthorized title",
+                "welcome_message": "Unauthorized branding change.",
+            },
+        )
+
+    assert updated.status_code == 200
+    assert updated.json()["display_name"] == "Alpha 知识中心"
+    assert updated.json()["primary_color"] == "#335CFF"
+    assert current.json()["organization"]["branding"] == updated.json()
+    assert accepted.json()["organization"]["branding"] == updated.json()
+    assert rejected.status_code == 403
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import {
   askRunbook,
   createOrganizationInvitation,
@@ -15,6 +15,7 @@ import {
   logout,
   revokeOrganizationInvitation,
   runEvaluation,
+  updateOrganizationBranding,
   uploadDocument
 } from "./api";
 import { Sidebar } from "./components/Sidebar";
@@ -36,6 +37,7 @@ import type {
   KnowledgeBase,
   NavKey,
   OrganizationMember,
+  OrganizationBranding,
   QueryResponse,
   RuntimeConfig,
   TenantInvitation,
@@ -43,7 +45,7 @@ import type {
   TenantContext
 } from "./types";
 
-const defaultQuestion = "配置发布后 Deployment 进入 CrashLoopBackOff，应该优先检查什么？";
+const defaultQuestion = "根据知识库，遇到这类业务问题时应该按照什么流程处理？";
 const emptyResponse: QueryResponse = {
   answer: "",
   confidence: 0,
@@ -300,6 +302,21 @@ export default function App() {
     }
   }
 
+  async function saveBranding(branding: OrganizationBranding) {
+    const saved = await updateOrganizationBranding(branding);
+    setTenant((current) => current
+      ? {
+          ...current,
+          organization: {
+            ...current.organization,
+            branding: saved
+          }
+        }
+      : current
+    );
+    return saved;
+  }
+
   const selectedKnowledgeBase = knowledgeBases.find(
     (item) => item.id === selectedKnowledgeBaseId
   );
@@ -329,17 +346,25 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      style={{
+        "--brand-primary": tenant.organization.branding.primary_color
+      } as CSSProperties}
+    >
       <Sidebar
         active={active}
         onChange={setActive}
-        organizationName={tenant.organization.name}
+        branding={tenant.organization.branding}
+        userEmail={tenant.user.email}
+        role={tenant.role}
       />
       <div className="app-main">
         <Topbar
           healthy={systemHealthy}
           knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"}
-          organizationName={tenant.organization.name}
+          organizationName={tenant.organization.branding.display_name}
+          page={active}
           userEmail={tenant.user.email}
           onLogout={() => void signOut()}
         />
@@ -369,6 +394,8 @@ export default function App() {
               onKnowledgeBaseChange={selectKnowledgeBase}
               ingestionJob={ingestionJob}
               knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"}
+              welcomeTitle={tenant.organization.branding.welcome_title}
+              welcomeMessage={tenant.organization.branding.welcome_message}
             />
           ) : null}
           {active === "knowledge" ? (
@@ -415,7 +442,13 @@ export default function App() {
             />
           ) : null}
           {active === "settings" ? (
-            <SettingsView config={runtimeConfig} error={runtimeConfigError} />
+            <SettingsView
+              config={runtimeConfig}
+              error={runtimeConfigError}
+              branding={tenant.organization.branding}
+              role={tenant.role}
+              onSaveBranding={saveBranding}
+            />
           ) : null}
         </main>
       </div>

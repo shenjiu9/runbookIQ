@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from runbookiq.domain.tenancy import (
     CreatedTenantInvitation,
     Organization,
+    OrganizationBranding,
     OrganizationMember,
     TenantContext,
     TenantInvitation,
@@ -41,6 +42,32 @@ def _password_matches(password: str, encoded: str) -> bool:
         return False
 
 
+def _internal_slug(organization_name: str, requested_slug: str | None) -> str:
+    if requested_slug:
+        normalized = requested_slug.strip().lower()
+        if not SLUG_PATTERN.fullmatch(normalized):
+            raise ValueError(
+                "enterprise slug must contain lowercase letters, numbers or hyphens"
+            )
+        return normalized
+    ascii_name = organization_name.casefold().encode("ascii", "ignore").decode()
+    base = re.sub(r"[^a-z0-9]+", "-", ascii_name).strip("-") or "org"
+    base = base[:22].rstrip("-") or "org"
+    return f"{base}-{uuid4().hex[:8]}"
+
+
+def _default_branding(organization_name: str) -> OrganizationBranding:
+    return OrganizationBranding(
+        display_name=organization_name.strip(),
+        welcome_title=f"欢迎来到{organization_name.strip()}知识空间",
+        welcome_message="从企业资料中检索答案，并通过原文证据核验每一项结论。",
+    )
+
+
+def _public_url(root_domain: str) -> str:
+    return f"https://{root_domain}"
+
+
 class OpenTenantAccess:
     """Development adapter that keeps existing local workflows frictionless."""
 
@@ -54,6 +81,7 @@ class OpenTenantAccess:
                 name="平台工程团队",
                 slug="platform",
                 url="http://localhost",
+                branding=_default_branding("平台工程团队"),
             ),
             role="owner",
         )
@@ -64,7 +92,7 @@ class OpenTenantAccess:
         email: str,
         password: str,
         organization_name: str,
-        slug: str,
+        slug: str | None,
     ) -> TenantSession:
         raise ValueError("registration is disabled in open development mode")
 
@@ -95,6 +123,20 @@ class OpenTenantAccess:
                 joined_at=datetime.now(UTC),
             )
         ]
+
+    async def get_branding(
+        self,
+        context: TenantContext,
+    ) -> OrganizationBranding:
+        return context.organization.branding
+
+    async def update_branding(
+        self,
+        context: TenantContext,
+        branding: OrganizationBranding,
+    ) -> OrganizationBranding:
+        context.organization.branding = branding
+        return branding
 
     async def list_invitations(
         self,
@@ -181,24 +223,22 @@ class InMemoryTenantAccess:
         email: str,
         password: str,
         organization_name: str,
-        slug: str,
+        slug: str | None,
     ) -> TenantSession:
         normalized_email = email.strip().lower()
-        normalized_slug = slug.strip().lower()
+        normalized_slug = _internal_slug(organization_name, slug)
         if normalized_email in self._users_by_email:
             raise ValueError("email is already registered")
         if normalized_slug in self._organization_ids_by_slug:
             raise ValueError("enterprise slug is already in use")
-        if not SLUG_PATTERN.fullmatch(normalized_slug):
-            raise ValueError("enterprise slug must contain lowercase letters, numbers or hyphens")
-
         user_id = f"user-{uuid4().hex}"
         organization_id = f"org-{uuid4().hex}"
         organization = Organization(
             id=organization_id,
             name=organization_name.strip(),
             slug=normalized_slug,
-            url=f"https://{normalized_slug}.{self._root_domain}",
+            url=_public_url(self._root_domain),
+            branding=_default_branding(organization_name),
         )
         self._users_by_email[normalized_email] = {
             "id": user_id,
@@ -305,6 +345,20 @@ class InMemoryTenantAccess:
                 )
             )
         return sorted(members, key=lambda member: member.joined_at)
+
+    async def get_branding(
+        self,
+        context: TenantContext,
+    ) -> OrganizationBranding:
+        return self._organizations_by_id[context.organization.id].branding
+
+    async def update_branding(
+        self,
+        context: TenantContext,
+        branding: OrganizationBranding,
+    ) -> OrganizationBranding:
+        self._organizations_by_id[context.organization.id].branding = branding
+        return branding
 
     async def list_invitations(
         self,
@@ -483,12 +537,11 @@ class PostgresTenantAccess:
         email: str,
         password: str,
         organization_name: str,
-        slug: str,
+        slug: str | None,
     ) -> TenantSession:
         normalized_email = email.strip().lower()
-        normalized_slug = slug.strip().lower()
-        if not SLUG_PATTERN.fullmatch(normalized_slug):
-            raise ValueError("enterprise slug must contain lowercase letters, numbers or hyphens")
+        normalized_slug = _internal_slug(organization_name, slug)
+        branding = _default_branding(organization_name)
 
         user_id = f"user-{uuid4().hex}"
         organization_id = f"org-{uuid4().hex}"
@@ -500,14 +553,24 @@ class PostgresTenantAccess:
                 await connection.execute(
                     text(
                         """
-                        INSERT INTO organizations (id, name, slug)
-                        VALUES (:id, :name, :slug)
+                        INSERT INTO organizations (
+                            id, name, slug, display_name, primary_color,
+                            welcome_title, welcome_message
+                        )
+                        VALUES (
+                            :id, :name, :slug, :display_name, :primary_color,
+                            :welcome_title, :welcome_message
+                        )
                         """
                     ),
                     {
                         "id": organization_id,
                         "name": organization_name.strip(),
                         "slug": normalized_slug,
+                        "display_name": branding.display_name,
+                        "primary_color": branding.primary_color,
+                        "welcome_title": branding.welcome_title,
+                        "welcome_message": branding.welcome_message,
                     },
                 )
                 await connection.execute(
@@ -533,18 +596,6 @@ class PostgresTenantAccess:
                     ),
                     {"organization_id": organization_id, "user_id": user_id},
                 )
-                await connection.execute(
-                    text(
-                        """
-                        INSERT INTO tenant_domains (domain, organization_id, is_primary)
-                        VALUES (:domain, :organization_id, true)
-                        """
-                    ),
-                    {
-                        "domain": f"{normalized_slug}.{self._root_domain}",
-                        "organization_id": organization_id,
-                    },
-                )
                 await self._insert_session(
                     connection,
                     token=token,
@@ -567,7 +618,8 @@ class PostgresTenantAccess:
                     id=organization_id,
                     name=organization_name.strip(),
                     slug=normalized_slug,
-                    url=f"https://{normalized_slug}.{self._root_domain}",
+                    url=_public_url(self._root_domain),
+                    branding=branding,
                 ),
                 role="owner",
             ),
@@ -585,6 +637,11 @@ class PostgresTenantAccess:
                 o.id AS organization_id,
                 o.name AS organization_name,
                 o.slug,
+                COALESCE(o.display_name, o.name) AS display_name,
+                o.logo_url,
+                o.primary_color,
+                o.welcome_title,
+                o.welcome_message,
                 m.role
             FROM users u
             JOIN organization_memberships m ON m.user_id = u.id
@@ -710,7 +767,7 @@ class PostgresTenantAccess:
             email=row["email"],
             role=row["role"],
             organization_name=row["organization_name"],
-            organization_url=f"https://{row['slug']}.{self._root_domain}",
+            organization_url=_public_url(self._root_domain),
             expires_at=row["expires_at"],
         )
 
@@ -731,7 +788,12 @@ class PostgresTenantAccess:
                                 i.email,
                                 i.role,
                                 o.name AS organization_name,
-                                o.slug
+                                o.slug,
+                                COALESCE(o.display_name, o.name) AS display_name,
+                                o.logo_url,
+                                o.primary_color,
+                                o.welcome_title,
+                                o.welcome_message
                             FROM organization_invitations i
                             JOIN organizations o ON o.id = i.organization_id
                             WHERE i.token_hash = :token_hash
@@ -798,7 +860,8 @@ class PostgresTenantAccess:
                 id=row["organization_id"],
                 name=row["organization_name"],
                 slug=row["slug"],
-                url=f"https://{row['slug']}.{self._root_domain}",
+                url=_public_url(self._root_domain),
+                branding=self._row_to_branding(row, row["organization_name"]),
             ),
             role=row["role"],
         )
@@ -830,6 +893,55 @@ class PostgresTenantAccess:
                 )
             ).mappings().all()
         return [OrganizationMember.model_validate(row) for row in rows]
+
+    async def get_branding(
+        self,
+        context: TenantContext,
+    ) -> OrganizationBranding:
+        async with self._engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT
+                            COALESCE(display_name, name) AS display_name,
+                            logo_url,
+                            primary_color,
+                            welcome_title,
+                            welcome_message
+                        FROM organizations
+                        WHERE id = :organization_id
+                        """
+                    ),
+                    {"organization_id": context.organization.id},
+                )
+            ).mappings().one()
+        return self._row_to_branding(row, context.organization.name)
+
+    async def update_branding(
+        self,
+        context: TenantContext,
+        branding: OrganizationBranding,
+    ) -> OrganizationBranding:
+        async with self._engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """
+                    UPDATE organizations
+                    SET display_name = :display_name,
+                        logo_url = :logo_url,
+                        primary_color = :primary_color,
+                        welcome_title = :welcome_title,
+                        welcome_message = :welcome_message
+                    WHERE id = :organization_id
+                    """
+                ),
+                {
+                    "organization_id": context.organization.id,
+                    **branding.model_dump(),
+                },
+            )
+        return branding
 
     async def list_invitations(
         self,
@@ -895,6 +1007,11 @@ class PostgresTenantAccess:
                 o.id AS organization_id,
                 o.name AS organization_name,
                 o.slug,
+                COALESCE(o.display_name, o.name) AS display_name,
+                o.logo_url,
+                o.primary_color,
+                o.welcome_title,
+                o.welcome_message,
                 m.role
             FROM auth_sessions s
             JOIN users u ON u.id = s.user_id
@@ -1093,9 +1210,21 @@ class PostgresTenantAccess:
                 id=row["organization_id"],
                 name=row["organization_name"],
                 slug=row["slug"],
-                url=f"https://{row['slug']}.{self._root_domain}",
+                url=_public_url(self._root_domain),
+                branding=self._row_to_branding(row, row["organization_name"]),
             ),
             role=row["role"],
+        )
+
+    @staticmethod
+    def _row_to_branding(row, organization_name: str) -> OrganizationBranding:
+        defaults = _default_branding(organization_name)
+        return OrganizationBranding(
+            display_name=row.get("display_name") or defaults.display_name,
+            logo_url=row.get("logo_url"),
+            primary_color=row.get("primary_color") or defaults.primary_color,
+            welcome_title=row.get("welcome_title") or defaults.welcome_title,
+            welcome_message=row.get("welcome_message") or defaults.welcome_message,
         )
 
     @staticmethod
