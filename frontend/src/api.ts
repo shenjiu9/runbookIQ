@@ -8,6 +8,7 @@ import type {
   OrganizationBranding,
   QueryResponse,
   RegistrationInput,
+  SecurityConfig,
   TenantInvitation,
   TenantInvitationPreview,
   TenantRole,
@@ -45,7 +46,13 @@ function apiFetch(
 async function decode<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(payload.detail ?? "请求失败");
+    const detail = Array.isArray(payload.detail)
+      ? payload.detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join("；")
+      : payload.detail;
+    const retryAfter = response.headers.get("Retry-After");
+    throw new Error(
+      `${typeof detail === "string" ? detail : "请求失败"}${retryAfter ? `（约 ${retryAfter} 秒后可重试）` : ""}`
+    );
   }
   return response.json() as Promise<T>;
 }
@@ -95,6 +102,12 @@ export async function fetchHealth(): Promise<HealthResponse> {
 export async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
   return decode<RuntimeConfig>(
     await apiFetch(`${API_BASE_URL}/api/runtime-config`)
+  );
+}
+
+export async function fetchSecurityConfig(): Promise<SecurityConfig> {
+  return decode<SecurityConfig>(
+    await apiFetch(`${API_BASE_URL}/api/security-config`)
   );
 }
 

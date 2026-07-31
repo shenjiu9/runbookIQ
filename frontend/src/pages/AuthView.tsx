@@ -1,11 +1,35 @@
-import { Building2, CheckCircle2, LockKeyhole, Mail, Users } from "lucide-react";
+import {
+  Building2,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  LockKeyhole,
+  Mail,
+  ShieldCheck,
+  Users
+} from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 
-import { acceptInvitation, login, previewInvitation, register } from "../api";
-import type { TenantContext, TenantInvitationPreview } from "../types";
+import {
+  acceptInvitation,
+  fetchSecurityConfig,
+  login,
+  previewInvitation,
+  register
+} from "../api";
+import { TurnstileWidget } from "../components/TurnstileWidget";
+import type { SecurityConfig, TenantContext, TenantInvitationPreview } from "../types";
 
 type Props = {
   onAuthenticated: (context: TenantContext) => void;
+};
+
+const fallbackSecurityConfig: SecurityConfig = {
+  turnstile_enabled: false,
+  turnstile_required: false,
+  turnstile_site_key: null,
+  max_batch_files: 10,
+  max_document_mib: 20
 };
 
 export function AuthView({ onAuthenticated }: Props) {
@@ -21,7 +45,13 @@ export function AuthView({ onAuthenticated }: Props) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [organizationName, setOrganizationName] = useState("");
+  const [securityConfig, setSecurityConfig] = useState<SecurityConfig | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileAttempt, setTurnstileAttempt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,8 +65,31 @@ export function AuthView({ onAuthenticated }: Props) {
       .finally(() => setInvitationLoading(false));
   }, [invitationToken]);
 
+  useEffect(() => {
+    void fetchSecurityConfig()
+      .then(setSecurityConfig)
+      .catch(() => setSecurityConfig(fallbackSecurityConfig));
+  }, []);
+
+  const isNewPassword = Boolean(invitationToken) || mode === "register";
+  const passwordsMatch = !isNewPassword || password === confirmPassword;
+  const strength = passwordStrength(password);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isNewPassword && !passwordsMatch) {
+      setError("两次输入的密码不一致");
+      return;
+    }
+    if (
+      !invitationToken
+      && mode === "register"
+      && securityConfig?.turnstile_required
+      && !turnstileToken
+    ) {
+      setError("请先完成人机验证");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -47,7 +100,8 @@ export function AuthView({ onAuthenticated }: Props) {
           : await register({
               email,
               password,
-              organization_name: organizationName
+              organization_name: organizationName,
+              turnstile_token: turnstileToken
             });
       if (invitationToken && typeof window !== "undefined") {
         window.history.replaceState({}, "", window.location.pathname);
@@ -55,6 +109,10 @@ export function AuthView({ onAuthenticated }: Props) {
       onAuthenticated(context);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "认证失败，请稍后重试");
+      if (!invitationToken && mode === "register" && securityConfig?.turnstile_enabled) {
+        setTurnstileToken(null);
+        setTurnstileAttempt((current) => current + 1);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -89,6 +147,8 @@ export function AuthView({ onAuthenticated }: Props) {
             className={mode === "login" ? "is-active" : ""}
             onClick={() => {
               setMode("login");
+              setConfirmPassword("");
+              setTurnstileToken(null);
               setError(null);
             }}
           >
@@ -101,6 +161,7 @@ export function AuthView({ onAuthenticated }: Props) {
             className={mode === "register" ? "is-active" : ""}
             onClick={() => {
               setMode("register");
+              setConfirmPassword("");
               setError(null);
             }}
           >
@@ -178,26 +239,99 @@ export function AuthView({ onAuthenticated }: Props) {
           </label> : null}
           <label>
             <span>密码</span>
-            <div className="auth-input">
+            <div className="auth-input password-input">
               <LockKeyhole size={19} />
               <input
                 required
-                type="password"
-                minLength={invitationToken || mode === "register" ? 12 : 1}
-                autoComplete={invitationToken || mode === "register" ? "new-password" : "current-password"}
+                type={showPassword ? "text" : "password"}
+                minLength={isNewPassword ? 12 : 1}
+                maxLength={200}
+                autoComplete={isNewPassword ? "new-password" : "current-password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder={invitationToken || mode === "register" ? "设置至少 12 位密码" : "输入密码"}
+                placeholder={isNewPassword ? "设置至少 12 位密码" : "输入密码"}
               />
+              <button
+                className="password-visibility"
+                type="button"
+                aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                aria-pressed={showPassword}
+                onClick={() => setShowPassword((current) => !current)}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
           </label>
+
+          {isNewPassword ? (
+            <>
+              <div className={`password-strength strength-${strength.level}`} aria-live="polite">
+                <span><i /><i /><i /></span>
+                <small>{strength.label} · 建议使用较长且不重复的密码短语</small>
+              </div>
+              <label>
+                <span>确认密码</span>
+                <div className="auth-input password-input">
+                  <ShieldCheck size={19} />
+                  <input
+                    required
+                    type={showConfirmPassword ? "text" : "password"}
+                    minLength={12}
+                    maxLength={200}
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    placeholder="再次输入密码"
+                    aria-invalid={Boolean(confirmPassword) && !passwordsMatch}
+                  />
+                  <button
+                    className="password-visibility"
+                    type="button"
+                    aria-label={showConfirmPassword ? "隐藏确认密码" : "显示确认密码"}
+                    aria-pressed={showConfirmPassword}
+                    onClick={() => setShowConfirmPassword((current) => !current)}
+                  >
+                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                {confirmPassword && !passwordsMatch
+                  ? <small className="field-error">两次输入的密码不一致</small>
+                  : null}
+              </label>
+            </>
+          ) : null}
+
+          {!invitationToken && mode === "register" && securityConfig?.turnstile_enabled && securityConfig.turnstile_site_key ? (
+            <TurnstileWidget
+              key={`${securityConfig.turnstile_site_key}-${turnstileAttempt}`}
+              siteKey={securityConfig.turnstile_site_key}
+              action="register"
+              onTokenChange={setTurnstileToken}
+            />
+          ) : null}
+
+          {!invitationToken && mode === "register" && securityConfig?.turnstile_required && !securityConfig.turnstile_enabled ? (
+            <div className="auth-error" role="alert">注册保护尚未完成配置，请联系管理员。</div>
+          ) : null}
 
           {error ? <div className="auth-error" role="alert">{error}</div> : null}
 
           <button
             className="auth-submit"
             type="submit"
-            disabled={submitting || invitationLoading || (Boolean(invitationToken) && !invitation)}
+            disabled={
+              submitting
+              || invitationLoading
+              || !securityConfig
+              || (Boolean(invitationToken) && !invitation)
+              || (isNewPassword && (!passwordsMatch || password.length < 12))
+              || (
+                !invitationToken
+                && mode === "register"
+                && securityConfig.turnstile_required
+                && !turnstileToken
+              )
+            }
           >
             {submitting
               ? "正在处理..."
@@ -211,6 +345,20 @@ export function AuthView({ onAuthenticated }: Props) {
       </section>
     </main>
   );
+}
+
+function passwordStrength(password: string) {
+  if (!password) return { level: 0, label: "至少 12 位" };
+  let score = password.length >= 12 ? 1 : 0;
+  if (password.length >= 16) score += 1;
+  if (/[a-zA-Z]/.test(password) && /\d/.test(password) && /[^a-zA-Z\d]/.test(password)) {
+    score += 1;
+  }
+  const level = Math.min(3, score);
+  return {
+    level,
+    label: ["长度不足", "可用", "较强", "很强"][level]
+  };
 }
 
 function roleLabel(role: TenantInvitationPreview["role"]) {

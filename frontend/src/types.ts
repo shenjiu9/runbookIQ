@@ -69,6 +69,15 @@ export type IngestionJob = {
   error: string | null;
 };
 
+export type UploadQueueItem = {
+  id: string;
+  filename: string;
+  size: number;
+  status: "queued" | "uploading" | "completed" | "failed";
+  job: IngestionJob | null;
+  error: string | null;
+};
+
 export type RuntimeConfig = {
   mode: string;
   chat_provider: string;
@@ -81,6 +90,21 @@ export type RuntimeConfig = {
   rerank_provider: string;
   query_timeout_seconds: number;
   ocr_languages: string;
+  max_document_mib: number;
+  max_batch_files: number;
+  max_knowledge_bases: number;
+  max_organization_members: number;
+  query_limit_per_day: number;
+  upload_limit_per_day: number;
+  evaluation_limit_per_hour: number;
+  turnstile_enabled: boolean;
+};
+
+export type SecurityConfig = {
+  turnstile_enabled: boolean;
+  turnstile_required: boolean;
+  turnstile_site_key: string | null;
+  max_batch_files: number;
   max_document_mib: number;
 };
 
@@ -141,6 +165,7 @@ export type RegistrationInput = {
   email: string;
   password: string;
   organization_name: string;
+  turnstile_token?: string | null;
 };
 
 export type NavKey =

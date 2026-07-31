@@ -33,6 +33,13 @@ from runbookiq.ingestion.manager import InlineIngestionManager
 from runbookiq.ingestion.parser import DocumentParser
 from runbookiq.investigation.engine import InvestigationEngine
 from runbookiq.investigation.ports import AnswerComposer, QueryRewriter
+from runbookiq.security import (
+    AbuseGuard,
+    DisabledTurnstileVerifier,
+    InMemoryAbuseGuard,
+    TurnstileVerifier,
+    UsageLimits,
+)
 
 
 def create_app(
@@ -47,6 +54,11 @@ def create_app(
     secure_cookies: bool = False,
     production_mode: bool = False,
     allowed_hosts: list[str] | None = None,
+    abuse_guard: AbuseGuard | None = None,
+    usage_limits: UsageLimits | None = None,
+    turnstile_verifier: TurnstileVerifier | None = None,
+    turnstile_site_key: str = "",
+    trust_proxy_headers: bool = False,
 ) -> FastAPI:
     app = FastAPI(
         title="RunbookIQ",
@@ -89,6 +101,36 @@ def create_app(
                         status_code=403,
                         content={"detail": "跨站请求已拒绝"},
                     )
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=()",
+        )
+        return response
+
+    resolved_limits = usage_limits or UsageLimits()
+
+    @app.middleware("http")
+    async def reject_oversized_uploads(request, call_next):
+        if request.method == "POST" and request.url.path == "/api/documents":
+            content_length = request.headers.get("content-length")
+            max_request_bytes = (resolved_limits.max_document_mib + 2) * 1024 * 1024
+            if (
+                content_length
+                and content_length.isdigit()
+                and int(content_length) > max_request_bytes
+            ):
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "detail": (
+                            f"单个文档不得超过 {resolved_limits.max_document_mib} MiB"
+                        )
+                    },
+                )
         return await call_next(request)
 
     app.state.investigator = investigator or DemoInvestigator()
@@ -110,8 +152,20 @@ def create_app(
         "rerank_provider": "token_overlap",
         "query_timeout_seconds": query_timeout_seconds,
         "ocr_languages": "未启用",
-        "max_document_mib": 20,
+        "max_document_mib": resolved_limits.max_document_mib,
+        "max_batch_files": resolved_limits.max_batch_files,
+        "max_knowledge_bases": resolved_limits.max_knowledge_bases,
+        "max_organization_members": resolved_limits.max_organization_members,
+        "query_limit_per_day": resolved_limits.query_per_day,
+        "upload_limit_per_day": resolved_limits.upload_per_day,
+        "evaluation_limit_per_hour": resolved_limits.evaluation_per_hour,
+        "turnstile_enabled": bool(turnstile_site_key),
     }
+    app.state.abuse_guard = abuse_guard or InMemoryAbuseGuard()
+    app.state.usage_limits = resolved_limits
+    app.state.turnstile_verifier = turnstile_verifier or DisabledTurnstileVerifier()
+    app.state.turnstile_site_key = turnstile_site_key
+    app.state.trust_proxy_headers = trust_proxy_headers
     app.include_router(router)
     return app
 
@@ -127,6 +181,10 @@ def create_local_app(
     tenant_access: TenantAccess | None = None,
     query_timeout_seconds: float = 60,
     runtime_config: dict[str, str | int | float | None] | None = None,
+    abuse_guard: AbuseGuard | None = None,
+    usage_limits: UsageLimits | None = None,
+    turnstile_verifier: TurnstileVerifier | None = None,
+    turnstile_site_key: str = "",
 ) -> FastAPI:
     """Create a zero-dependency app that exercises the real RAG pipeline."""
     embedder = HashingEmbedder()
@@ -154,4 +212,8 @@ def create_local_app(
         tenant_access=tenant_access,
         query_timeout_seconds=query_timeout_seconds,
         runtime_config=runtime_config,
+        abuse_guard=abuse_guard,
+        usage_limits=usage_limits,
+        turnstile_verifier=turnstile_verifier,
+        turnstile_site_key=turnstile_site_key,
     )

@@ -8,6 +8,7 @@ class RegistrationRequest(BaseModel):
     password: str = Field(min_length=12, max_length=200)
     organization_name: str = Field(min_length=2, max_length=120)
     slug: str | None = Field(default=None, min_length=2, max_length=32)
+    turnstile_token: str | None = Field(default=None, max_length=2048)
 
     @field_validator("email", "organization_name")
     @classmethod
@@ -150,3 +151,18 @@ class RuntimeConfigResponse(BaseModel):
     query_timeout_seconds: float
     ocr_languages: str
     max_document_mib: int = 20
+    max_batch_files: int = 10
+    max_knowledge_bases: int = 5
+    max_organization_members: int = 25
+    query_limit_per_day: int = 200
+    upload_limit_per_day: int = 50
+    evaluation_limit_per_hour: int = 10
+    turnstile_enabled: bool = False
+
+
+class SecurityConfigResponse(BaseModel):
+    turnstile_enabled: bool
+    turnstile_required: bool
+    turnstile_site_key: str | None
+    max_batch_files: int
+    max_document_mib: int

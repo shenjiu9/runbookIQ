@@ -34,7 +34,8 @@ import type {
   OrganizationBranding,
   RuntimeConfig,
   TenantInvitation,
-  TenantRole
+  TenantRole,
+  UploadQueueItem
 } from "../types";
 
 type KnowledgeProps = {
@@ -133,11 +134,13 @@ export function KnowledgeView({
 
 type IngestionProps = {
   knowledgeBaseName: string;
-  job: IngestionJob | null;
+  queue: UploadQueueItem[];
   loading: boolean;
   error: string | null;
   role: TenantRole;
-  onUpload: (file: File) => void;
+  maxBatchFiles: number;
+  maxDocumentMib: number;
+  onUpload: (files: File[]) => void;
 };
 
 function jobStatusLabel(status: IngestionJob["status"]) {
@@ -150,22 +153,55 @@ function jobStatusLabel(status: IngestionJob["status"]) {
   return labels[status];
 }
 
-export function IngestionView({ knowledgeBaseName, job, loading, error, onUpload, role }: IngestionProps) {
+export function IngestionView({
+  knowledgeBaseName,
+  queue,
+  loading,
+  error,
+  onUpload,
+  role,
+  maxBatchFiles,
+  maxDocumentMib
+}: IngestionProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const disabled = role === "viewer" || loading;
+
+  function selectFiles(files: FileList | null) {
+    const selected = Array.from(files ?? []);
+    if (selected.length) onUpload(selected);
+  }
+
   return (
     <Section title="文档管理" eyebrow={`当前知识库：${knowledgeBaseName}`} description="上传企业资料，系统会完成解析、OCR、分块与索引，并保留章节上下文。">
-      <button className="upload-zone" disabled={role === "viewer"} onClick={() => inputRef.current?.click()}>
+      <button
+        className={`upload-zone ${dragActive ? "is-dragging" : ""}`}
+        disabled={disabled}
+        onClick={() => inputRef.current?.click()}
+        onDragEnter={(event) => {
+          event.preventDefault();
+          if (!disabled) setDragActive(true);
+        }}
+        onDragOver={(event) => event.preventDefault()}
+        onDragLeave={() => setDragActive(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragActive(false);
+          if (!disabled) selectFiles(event.dataTransfer.files);
+        }}
+      >
         {loading ? <LoaderCircle className="spin" size={32} /> : <CloudUpload size={32} />}
-        <strong>{loading ? "正在处理文档…" : role === "viewer" ? "只读账号不可上传文档" : "上传制度、手册、业务资料或参考文档"}</strong>
-        <span>支持 Markdown、TXT、PDF、DOCX 和图片 OCR · 最大 20 MiB</span>
+        <strong>{loading ? "正在按顺序处理文件…" : role === "viewer" ? "只读账号不可上传文档" : "拖放文件到这里，或点击批量选择"}</strong>
+        <span>每批最多 {maxBatchFiles} 个 · 单个最大 {maxDocumentMib} MiB · 支持 Markdown、TXT、PDF、DOCX 和图片 OCR</span>
         <input
           ref={inputRef}
           type="file"
+          multiple
           accept=".md,.markdown,.txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff"
           hidden
           onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) onUpload(file);
+            selectFiles(event.target.files);
+            event.target.value = "";
           }}
         />
       </button>
@@ -184,15 +220,49 @@ export function IngestionView({ knowledgeBaseName, job, loading, error, onUpload
           </section>
         ))}
       </div>
-      {job ? (
-        <section className="panel job-card">
-          <div><CheckCircle2 size={19} /><span><strong>{job.filename}</strong><small>任务 {job.id}</small></span></div>
-          <div className="job-progress"><i style={{ width: `${job.progress}%` }} /></div>
-          <code>{job.chunks_created} 个分块 · {jobStatusLabel(job.status)}</code>
+      {queue.length ? (
+        <section className="panel upload-queue" aria-live="polite">
+          <div className="panel-heading">
+            <strong>本批上传队列</strong>
+            <span>{queue.filter((item) => item.status === "completed").length} / {queue.length} 已完成</span>
+          </div>
+          <div className="upload-queue-list">
+            {queue.map((item) => (
+              <div className={`upload-queue-row is-${item.status}`} key={item.id}>
+                <span className="upload-status-icon">
+                  {item.status === "uploading"
+                    ? <LoaderCircle className="spin" size={18} />
+                    : item.status === "completed"
+                      ? <CheckCircle2 size={18} />
+                      : <FileText size={18} />}
+                </span>
+                <div>
+                  <strong>{item.filename}</strong>
+                  <small>{formatFileSize(item.size)} · {item.error ?? (item.job ? `${item.job.chunks_created} 个分块` : statusLabel(item.status))}</small>
+                </div>
+                <span>{item.job ? jobStatusLabel(item.job.status) : statusLabel(item.status)}</span>
+              </div>
+            ))}
+          </div>
         </section>
       ) : null}
     </Section>
   );
+}
+
+function statusLabel(status: UploadQueueItem["status"]) {
+  return {
+    queued: "等待上传",
+    uploading: "正在上传",
+    completed: "处理完成",
+    failed: "处理失败"
+  }[status];
+}
+
+function formatFileSize(size: number) {
+  return size >= 1024 * 1024
+    ? `${(size / (1024 * 1024)).toFixed(1)} MiB`
+    : `${Math.max(1, Math.round(size / 1024))} KiB`;
 }
 
 type EvaluationProps = {
@@ -682,6 +752,7 @@ export function SettingsView({
               <ConfigRow label="查询超时" value={`${config.query_timeout_seconds} 秒`} />
               <ConfigRow label="OCR 语言" value={config.ocr_languages} />
               <ConfigRow label="文档上限" value={`${config.max_document_mib} MiB`} />
+              <ConfigRow label="批量上传" value={`每批最多 ${config.max_batch_files} 个文件`} />
             </dl>
           ) : (
             <div className="settings-empty">
@@ -689,6 +760,19 @@ export function SettingsView({
               <p>配置加载完成后会显示当前服务器实际使用的模型与检索参数。</p>
             </div>
           )}
+        </section>
+        <section className="panel settings-card">
+          <div className="settings-title"><ShieldCheck size={20} /><span><strong>免费阶段使用限制</strong><small>服务端强制执行 · 防止模型与存储资源被滥用</small></span></div>
+          {config ? (
+            <dl className="runtime-config-list">
+              <ConfigRow label="企业问答" value={`每个企业每天 ${config.query_limit_per_day} 次`} />
+              <ConfigRow label="文档上传" value={`每个企业每天 ${config.upload_limit_per_day} 份`} />
+              <ConfigRow label="质量评测" value={`每个企业每小时 ${config.evaluation_limit_per_hour} 次`} />
+              <ConfigRow label="知识库" value={`每个企业最多 ${config.max_knowledge_bases} 个`} />
+              <ConfigRow label="企业成员" value={`含待接受邀请最多 ${config.max_organization_members} 人`} />
+              <ConfigRow label="机器人防护" value={config.turnstile_enabled ? "Cloudflare Turnstile 已启用" : "应用限流已启用，Turnstile 待配置"} />
+            </dl>
+          ) : <div className="settings-empty"><strong>正在读取限制配置</strong></div>}
         </section>
       </div>
     </Section>

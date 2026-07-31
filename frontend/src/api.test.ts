@@ -10,6 +10,7 @@ import {
   fetchCurrentUser,
   fetchOrganizationBranding,
   fetchRuntimeConfig,
+  fetchSecurityConfig,
   listEvaluationSuites,
   listKnowledgeBases,
   listOrganizationInvitations,
@@ -127,7 +128,14 @@ describe("askRunbook", () => {
       rerank_provider: "chat",
       query_timeout_seconds: 60,
       ocr_languages: "chi_sim+eng",
-      max_document_mib: 20
+      max_document_mib: 20,
+      max_batch_files: 10,
+      max_knowledge_bases: 5,
+      max_organization_members: 25,
+      query_limit_per_day: 200,
+      upload_limit_per_day: 50,
+      evaluation_limit_per_hour: 10,
+      turnstile_enabled: true
     };
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(runtimeConfig), {
@@ -141,6 +149,28 @@ describe("askRunbook", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:8004/api/runtime-config",
       expect.objectContaining({ credentials: "include" })
+    );
+  });
+
+  it("reads the public registration security configuration", async () => {
+    const securityConfig = {
+      turnstile_enabled: true,
+      turnstile_required: true,
+      turnstile_site_key: "public-site-key",
+      max_batch_files: 10,
+      max_document_mib: 20
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(securityConfig), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await fetchSecurityConfig()).toEqual(securityConfig);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://127.0.0.1:8004/api/security-config"
     );
   });
 
@@ -175,7 +205,8 @@ describe("askRunbook", () => {
     await register({
       email: "owner@alpha.example",
       password: "Strong-password-2026",
-      organization_name: "Alpha Manufacturing"
+      organization_name: "Alpha Manufacturing",
+      turnstile_token: "verified-browser-token"
     });
     await login("owner@alpha.example", "Strong-password-2026");
     await fetchCurrentUser();
@@ -190,7 +221,8 @@ describe("askRunbook", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       email: "owner@alpha.example",
       password: "Strong-password-2026",
-      organization_name: "Alpha Manufacturing"
+      organization_name: "Alpha Manufacturing",
+      turnstile_token: "verified-browser-token"
     });
     expect(fetchMock.mock.calls[1][1]).toEqual(
       expect.objectContaining({ method: "POST", credentials: "include" })
