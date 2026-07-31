@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  acceptInvitation,
   askRunbook,
+  createOrganizationInvitation,
   createKnowledgeBase,
   deleteKnowledgeBase,
   fetchLatestEvaluation,
@@ -9,9 +11,13 @@ import {
   fetchRuntimeConfig,
   listEvaluationSuites,
   listKnowledgeBases,
+  listOrganizationInvitations,
+  listOrganizationMembers,
   login,
+  previewInvitation,
   QUERY_TIMEOUT_MS,
   register,
+  revokeOrganizationInvitation,
   runEvaluation
 } from "./api";
 
@@ -184,6 +190,105 @@ describe("askRunbook", () => {
     );
     expect(fetchMock.mock.calls[2][1]).toEqual(
       expect.objectContaining({ credentials: "include" })
+    );
+  });
+
+  it("manages one-time enterprise invitations through tenant-scoped endpoints", async () => {
+    const member = {
+      user_id: "user-1",
+      email: "owner@alpha.example",
+      role: "owner",
+      joined_at: "2026-07-31T00:00:00Z"
+    };
+    const invitation = {
+      id: "invite-1",
+      email: "viewer@alpha.example",
+      role: "viewer" as const,
+      expires_at: "2026-08-07T00:00:00Z",
+      created_at: "2026-07-31T00:00:00Z",
+      token: "secure-invitation-token",
+      accept_url: "https://alpha.knowledge.test/#invite=secure-invitation-token"
+    };
+    const acceptedContext = {
+      user: { id: "user-2", email: invitation.email },
+      organization: {
+        id: "org-1",
+        name: "Alpha Manufacturing",
+        slug: "alpha",
+        url: "https://alpha.knowledge.test"
+      },
+      role: "viewer"
+    };
+    const preview = {
+      email: invitation.email,
+      role: invitation.role,
+      organization_name: "Alpha Manufacturing",
+      organization_url: "https://alpha.knowledge.test",
+      expires_at: invitation.expires_at
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([member]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(invitation), {
+          status: 201,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(preview), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(acceptedContext), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", { cookie: "runbookiq_csrf=csrf-browser-token" });
+
+    expect(await listOrganizationMembers()).toEqual([member]);
+    expect(await listOrganizationInvitations()).toEqual([]);
+    expect(
+      await createOrganizationInvitation(invitation.email, invitation.role)
+    ).toEqual(invitation);
+    expect(await previewInvitation(invitation.token)).toEqual(preview);
+    expect(
+      await acceptInvitation(invitation.token, "Invited-password-2026")
+    ).toEqual(acceptedContext);
+    await revokeOrganizationInvitation(invitation.id);
+
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({
+      email: "viewer@alpha.example",
+      role: "viewer"
+    });
+    expect(fetchMock.mock.calls[3][0]).toBe(
+      "http://127.0.0.1:8004/api/auth/invitations/preview"
+    );
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({
+      token: "secure-invitation-token"
+    });
+    expect(JSON.parse(fetchMock.mock.calls[4][1].body)).toEqual({
+      token: "secure-invitation-token",
+      password: "Invited-password-2026"
+    });
+    expect(new Headers(fetchMock.mock.calls[2][1].headers).get("X-CSRF-Token")).toBe(
+      "csrf-browser-token"
     );
   });
 

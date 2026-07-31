@@ -4,6 +4,9 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, Response, Upl
 
 from runbookiq.api.schemas import (
     EvaluationRunRequest,
+    InvitationAcceptRequest,
+    InvitationCreateRequest,
+    InvitationPreviewRequest,
     KnowledgeBaseCreate,
     LoginRequest,
     QueryRequest,
@@ -17,7 +20,15 @@ from runbookiq.domain.models import (
     IngestionJob,
     KnowledgeBase,
 )
-from runbookiq.domain.tenancy import TenantContext, TenantSession
+from runbookiq.domain.tenancy import (
+    CreatedTenantInvitation,
+    OrganizationMember,
+    TenantContext,
+    TenantInvitation,
+    TenantInvitationPreview,
+    TenantRole,
+    TenantSession,
+)
 from runbookiq.evaluation.benchmark import get_benchmark, list_benchmarks, load_benchmark
 
 router = APIRouter(prefix="/api")
@@ -52,6 +63,11 @@ async def _current_tenant(request: Request) -> TenantContext:
         if not csrf_valid:
             raise HTTPException(status_code=403, detail="CSRF 校验失败")
     return context
+
+
+def _require_role(context: TenantContext, *allowed_roles: TenantRole) -> None:
+    if context.role not in allowed_roles:
+        raise HTTPException(status_code=403, detail="当前角色无权执行此操作")
 
 
 def _set_session_cookie(
@@ -100,6 +116,14 @@ async def register(
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    default_knowledge_base = await request.app.state.knowledge_bases.create(
+        name=f"{session.context.organization.name} 企业知识库",
+        description="企业制度、手册与业务资料",
+    )
+    await request.app.state.tenant_access.grant_knowledge_base(
+        session.context,
+        default_knowledge_base.id,
+    )
     _set_session_cookie(response, session, request)
     return session.context
 
@@ -117,6 +141,44 @@ async def login(
         )
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    resolved_context = await request.app.state.tenant_access.resolve(
+        session_token=session.token,
+        host=request.headers.get("host", ""),
+    )
+    if resolved_context is None:
+        await request.app.state.tenant_access.revoke_session(session.token)
+        raise HTTPException(status_code=403, detail="该账号不属于当前企业网址")
+    _set_session_cookie(response, session, request)
+    return session.context
+
+
+@router.post(
+    "/auth/invitations/preview",
+    response_model=TenantInvitationPreview,
+)
+async def preview_invitation(
+    payload: InvitationPreviewRequest,
+    request: Request,
+) -> TenantInvitationPreview:
+    try:
+        return await request.app.state.tenant_access.preview_invitation(payload.token)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/auth/invitations/accept", response_model=TenantContext)
+async def accept_invitation(
+    payload: InvitationAcceptRequest,
+    request: Request,
+    response: Response,
+) -> TenantContext:
+    try:
+        session = await request.app.state.tenant_access.accept_invitation(
+            token=payload.token,
+            password=payload.password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     _set_session_cookie(response, session, request)
     return session.context
 
@@ -124,6 +186,66 @@ async def login(
 @router.get("/auth/me", response_model=TenantContext)
 async def current_user(request: Request) -> TenantContext:
     return await _current_tenant(request)
+
+
+@router.get(
+    "/organization/members",
+    response_model=list[OrganizationMember],
+)
+async def list_organization_members(request: Request) -> list[OrganizationMember]:
+    context = await _current_tenant(request)
+    return await request.app.state.tenant_access.list_members(context)
+
+
+@router.get(
+    "/organization/invitations",
+    response_model=list[TenantInvitation],
+)
+async def list_organization_invitations(request: Request) -> list[TenantInvitation]:
+    context = await _current_tenant(request)
+    _require_role(context, "owner", "admin")
+    return await request.app.state.tenant_access.list_invitations(context)
+
+
+@router.post(
+    "/organization/invitations",
+    response_model=CreatedTenantInvitation,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_organization_invitation(
+    payload: InvitationCreateRequest,
+    request: Request,
+) -> CreatedTenantInvitation:
+    context = await _current_tenant(request)
+    _require_role(context, "owner", "admin")
+    try:
+        return await request.app.state.tenant_access.create_invitation(
+            context,
+            email=payload.email,
+            role=payload.role,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/organization/invitations/{invitation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revoke_organization_invitation(
+    invitation_id: str,
+    request: Request,
+) -> Response:
+    context = await _current_tenant(request)
+    _require_role(context, "owner", "admin")
+    try:
+        await request.app.state.tenant_access.revoke_invitation(
+            context,
+            invitation_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="邀请不存在") from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -180,6 +302,7 @@ async def create_knowledge_base(
     request: Request,
 ) -> KnowledgeBase:
     context = await _current_tenant(request)
+    _require_role(context, "owner", "admin", "editor")
     knowledge_base = await request.app.state.knowledge_bases.create(
         name=payload.name,
         description=payload.description,
@@ -207,6 +330,7 @@ async def list_knowledge_bases(request: Request) -> list[KnowledgeBase]:
 )
 async def delete_knowledge_base(knowledge_base_id: str, request: Request) -> Response:
     context = await _require_knowledge_base(request, knowledge_base_id)
+    _require_role(context, "owner", "admin")
     try:
         await request.app.state.knowledge_bases.delete(knowledge_base_id)
     except KeyError as exc:
@@ -258,7 +382,8 @@ async def upload_document(
     knowledge_base_id: str = Form(...),
     file: UploadFile = File(...),  # noqa: B008 - FastAPI dependency declaration
 ) -> IngestionJob:
-    await _require_knowledge_base(request, knowledge_base_id)
+    context = await _require_knowledge_base(request, knowledge_base_id)
+    _require_role(context, "owner", "admin", "editor")
     content = await file.read()
     if not content:
         raise HTTPException(status_code=422, detail="document must not be empty")
@@ -287,7 +412,8 @@ async def run_evaluation(
     payload: EvaluationRunRequest,
     request: Request,
 ) -> EvaluationReport:
-    await _require_knowledge_base(request, payload.knowledge_base_id)
+    context = await _require_knowledge_base(request, payload.knowledge_base_id)
+    _require_role(context, "owner", "admin", "editor")
     if payload.suite_id:
         try:
             suite = get_benchmark(payload.suite_id)

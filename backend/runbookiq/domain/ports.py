@@ -1,7 +1,15 @@
 from typing import Protocol
 
 from runbookiq.domain.models import Answer, EvaluationReport, IngestionJob, KnowledgeBase
-from runbookiq.domain.tenancy import TenantContext, TenantSession
+from runbookiq.domain.tenancy import (
+    CreatedTenantInvitation,
+    OrganizationMember,
+    TenantContext,
+    TenantInvitation,
+    TenantInvitationPreview,
+    TenantRole,
+    TenantSession,
+)
 
 
 class KnowledgeBaseCatalog(Protocol):
@@ -57,6 +65,31 @@ class TenantAccess(Protocol):
     ) -> TenantSession: ...
 
     async def authenticate(self, *, email: str, password: str) -> TenantSession: ...
+
+    async def create_invitation(
+        self,
+        context: TenantContext,
+        *,
+        email: str,
+        role: TenantRole,
+    ) -> CreatedTenantInvitation: ...
+
+    async def preview_invitation(self, token: str) -> TenantInvitationPreview: ...
+
+    async def accept_invitation(self, *, token: str, password: str) -> TenantSession: ...
+
+    async def list_members(self, context: TenantContext) -> list[OrganizationMember]: ...
+
+    async def list_invitations(
+        self,
+        context: TenantContext,
+    ) -> list[TenantInvitation]: ...
+
+    async def revoke_invitation(
+        self,
+        context: TenantContext,
+        invitation_id: str,
+    ) -> None: ...
 
     async def resolve(
         self,

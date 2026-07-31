@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from runbookiq.domain.tenancy import TenantRole
+
 
 class RegistrationRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
@@ -29,6 +31,35 @@ class LoginRequest(BaseModel):
     @classmethod
     def normalize_email(cls, value: str) -> str:
         return value.strip().lower()
+
+
+class InvitationCreateRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    role: TenantRole
+
+    @field_validator("email")
+    @classmethod
+    def normalize_invitation_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized.count("@") != 1 or normalized.startswith("@") or normalized.endswith("@"):
+            raise ValueError("enter a valid email address")
+        return normalized
+
+    @field_validator("role")
+    @classmethod
+    def invitation_role_must_not_be_owner(cls, value: TenantRole) -> TenantRole:
+        if value == "owner":
+            raise ValueError("owner role cannot be assigned by invitation")
+        return value
+
+
+class InvitationAcceptRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str = Field(min_length=12, max_length=200)
+
+
+class InvitationPreviewRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
 
 
 class KnowledgeBaseCreate(BaseModel):

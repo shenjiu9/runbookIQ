@@ -11,8 +11,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from runbookiq.domain.tenancy import (
+    CreatedTenantInvitation,
     Organization,
+    OrganizationMember,
     TenantContext,
+    TenantInvitation,
+    TenantInvitationPreview,
+    TenantRole,
     TenantSession,
     TenantUser,
 )
@@ -65,6 +70,44 @@ class OpenTenantAccess:
 
     async def authenticate(self, *, email: str, password: str) -> TenantSession:
         raise ValueError("login is disabled in open development mode")
+
+    async def create_invitation(
+        self,
+        context: TenantContext,
+        *,
+        email: str,
+        role: TenantRole,
+    ) -> CreatedTenantInvitation:
+        raise ValueError("invitations are disabled in open development mode")
+
+    async def preview_invitation(self, token: str) -> TenantInvitationPreview:
+        raise ValueError("invitation is invalid or expired")
+
+    async def accept_invitation(self, *, token: str, password: str) -> TenantSession:
+        raise ValueError("invitations are disabled in open development mode")
+
+    async def list_members(self, context: TenantContext) -> list[OrganizationMember]:
+        return [
+            OrganizationMember(
+                user_id=context.user.id,
+                email=context.user.email,
+                role=context.role,
+                joined_at=datetime.now(UTC),
+            )
+        ]
+
+    async def list_invitations(
+        self,
+        context: TenantContext,
+    ) -> list[TenantInvitation]:
+        return []
+
+    async def revoke_invitation(
+        self,
+        context: TenantContext,
+        invitation_id: str,
+    ) -> None:
+        raise KeyError(invitation_id)
 
     async def resolve(self, *, session_token: str | None, host: str) -> TenantContext:
         return self._context
@@ -129,6 +172,8 @@ class InMemoryTenantAccess:
         self._memberships: dict[str, tuple[str, str]] = {}
         self._sessions: dict[str, tuple[str, str, datetime]] = {}
         self._knowledge_base_owners: dict[str, str] = {}
+        self._membership_created_at: dict[str, datetime] = {}
+        self._invitations_by_hash: dict[str, dict[str, object]] = {}
 
     async def register(
         self,
@@ -163,6 +208,7 @@ class InMemoryTenantAccess:
         self._organizations_by_id[organization_id] = organization
         self._organization_ids_by_slug[normalized_slug] = organization_id
         self._memberships[user_id] = (organization_id, "owner")
+        self._membership_created_at[user_id] = datetime.now(UTC)
         return self._new_session(user_id)
 
     async def authenticate(self, *, email: str, password: str) -> TenantSession:
@@ -170,6 +216,130 @@ class InMemoryTenantAccess:
         if user is None or not _password_matches(password, user["password_hash"]):
             raise ValueError("email or password is incorrect")
         return self._new_session(user["id"])
+
+    async def create_invitation(
+        self,
+        context: TenantContext,
+        *,
+        email: str,
+        role: TenantRole,
+    ) -> CreatedTenantInvitation:
+        normalized_email = email.strip().lower()
+        if normalized_email in self._users_by_email:
+            raise ValueError("该邮箱已经是系统用户")
+        now = datetime.now(UTC)
+        for invitation in self._invitations_by_hash.values():
+            if (
+                invitation["organization_id"] == context.organization.id
+                and invitation["email"] == normalized_email
+                and invitation["expires_at"] > now
+            ):
+                raise ValueError("该邮箱已有待接受邀请")
+        token = secrets.token_urlsafe(32)
+        invitation_id = f"invite-{uuid4().hex}"
+        expires_at = now + timedelta(days=7)
+        invitation = {
+            "id": invitation_id,
+            "organization_id": context.organization.id,
+            "email": normalized_email,
+            "role": role,
+            "expires_at": expires_at,
+            "created_at": now,
+        }
+        self._invitations_by_hash[self._token_hash(token)] = invitation
+        return CreatedTenantInvitation(
+            id=invitation_id,
+            email=normalized_email,
+            role=role,
+            expires_at=expires_at,
+            created_at=now,
+            token=token,
+            accept_url=f"{context.organization.url}/#invite={token}",
+        )
+
+    async def preview_invitation(self, token: str) -> TenantInvitationPreview:
+        invitation = self._active_invitation(token)
+        organization = self._organizations_by_id[str(invitation["organization_id"])]
+        return TenantInvitationPreview(
+            email=str(invitation["email"]),
+            role=invitation["role"],
+            organization_name=organization.name,
+            organization_url=organization.url,
+            expires_at=invitation["expires_at"],
+        )
+
+    async def accept_invitation(self, *, token: str, password: str) -> TenantSession:
+        token_hash = self._token_hash(token)
+        invitation = self._active_invitation(token)
+        normalized_email = str(invitation["email"])
+        if normalized_email in self._users_by_email:
+            raise ValueError("该邮箱已经是系统用户")
+        user_id = f"user-{uuid4().hex}"
+        self._users_by_email[normalized_email] = {
+            "id": user_id,
+            "email": normalized_email,
+            "password_hash": _password_hash(password),
+        }
+        self._memberships[user_id] = (
+            str(invitation["organization_id"]),
+            str(invitation["role"]),
+        )
+        self._membership_created_at[user_id] = datetime.now(UTC)
+        self._invitations_by_hash.pop(token_hash, None)
+        return self._new_session(user_id)
+
+    async def list_members(self, context: TenantContext) -> list[OrganizationMember]:
+        members = []
+        for user_id, (organization_id, role) in self._memberships.items():
+            if organization_id != context.organization.id:
+                continue
+            user = next(
+                item for item in self._users_by_email.values() if item["id"] == user_id
+            )
+            members.append(
+                OrganizationMember(
+                    user_id=user_id,
+                    email=user["email"],
+                    role=role,
+                    joined_at=self._membership_created_at[user_id],
+                )
+            )
+        return sorted(members, key=lambda member: member.joined_at)
+
+    async def list_invitations(
+        self,
+        context: TenantContext,
+    ) -> list[TenantInvitation]:
+        now = datetime.now(UTC)
+        return sorted(
+            [
+                TenantInvitation(
+                    id=str(item["id"]),
+                    email=str(item["email"]),
+                    role=item["role"],
+                    expires_at=item["expires_at"],
+                    created_at=item["created_at"],
+                )
+                for item in self._invitations_by_hash.values()
+                if item["organization_id"] == context.organization.id
+                and item["expires_at"] > now
+            ],
+            key=lambda invitation: invitation.created_at,
+        )
+
+    async def revoke_invitation(
+        self,
+        context: TenantContext,
+        invitation_id: str,
+    ) -> None:
+        for token_hash, invitation in list(self._invitations_by_hash.items()):
+            if (
+                invitation["id"] == invitation_id
+                and invitation["organization_id"] == context.organization.id
+            ):
+                self._invitations_by_hash.pop(token_hash)
+                return
+        raise KeyError(invitation_id)
 
     async def resolve(
         self,
@@ -281,6 +451,12 @@ class InMemoryTenantAccess:
         if "." in slug:
             return None
         return self._organization_ids_by_slug.get(slug)
+
+    def _active_invitation(self, token: str) -> dict[str, object]:
+        invitation = self._invitations_by_hash.get(self._token_hash(token))
+        if invitation is None or invitation["expires_at"] <= datetime.now(UTC):
+            raise ValueError("邀请链接无效或已过期")
+        return invitation
 
     @staticmethod
     def _token_hash(token: str) -> str:
@@ -438,6 +614,270 @@ class PostgresTenantAccess:
             token=token,
             csrf_token=csrf_token,
         )
+
+    async def create_invitation(
+        self,
+        context: TenantContext,
+        *,
+        email: str,
+        role: TenantRole,
+    ) -> CreatedTenantInvitation:
+        normalized_email = email.strip().lower()
+        token = secrets.token_urlsafe(32)
+        invitation_id = f"invite-{uuid4().hex}"
+        expires_at = datetime.now(UTC) + timedelta(days=7)
+        try:
+            async with self._engine.begin() as connection:
+                existing_user = await connection.scalar(
+                    text("SELECT EXISTS (SELECT 1 FROM users WHERE email = :email)"),
+                    {"email": normalized_email},
+                )
+                if existing_user:
+                    raise ValueError("该邮箱已经是系统用户")
+                await connection.execute(
+                    text(
+                        """
+                        DELETE FROM organization_invitations
+                        WHERE organization_id = :organization_id
+                          AND accepted_at IS NULL
+                          AND revoked_at IS NULL
+                          AND expires_at <= now()
+                        """
+                    ),
+                    {"organization_id": context.organization.id},
+                )
+                await connection.execute(
+                    text(
+                        """
+                        INSERT INTO organization_invitations (
+                            id, organization_id, email, role, token_hash,
+                            invited_by, expires_at
+                        )
+                        VALUES (
+                            :id, :organization_id, :email, :role, :token_hash,
+                            :invited_by, :expires_at
+                        )
+                        """
+                    ),
+                    {
+                        "id": invitation_id,
+                        "organization_id": context.organization.id,
+                        "email": normalized_email,
+                        "role": role,
+                        "token_hash": self._token_hash(token),
+                        "invited_by": context.user.id,
+                        "expires_at": expires_at,
+                    },
+                )
+        except IntegrityError as exc:
+            raise ValueError("该邮箱已有待接受邀请") from exc
+        return CreatedTenantInvitation(
+            id=invitation_id,
+            email=normalized_email,
+            role=role,
+            expires_at=expires_at,
+            created_at=datetime.now(UTC),
+            token=token,
+            accept_url=f"{context.organization.url}/#invite={token}",
+        )
+
+    async def preview_invitation(self, token: str) -> TenantInvitationPreview:
+        async with self._engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT
+                            i.email,
+                            i.role,
+                            i.expires_at,
+                            o.name AS organization_name,
+                            o.slug
+                        FROM organization_invitations i
+                        JOIN organizations o ON o.id = i.organization_id
+                        WHERE i.token_hash = :token_hash
+                          AND i.accepted_at IS NULL
+                          AND i.revoked_at IS NULL
+                          AND i.expires_at > now()
+                        """
+                    ),
+                    {"token_hash": self._token_hash(token)},
+                )
+            ).mappings().one_or_none()
+        if row is None:
+            raise ValueError("邀请链接无效或已过期")
+        return TenantInvitationPreview(
+            email=row["email"],
+            role=row["role"],
+            organization_name=row["organization_name"],
+            organization_url=f"https://{row['slug']}.{self._root_domain}",
+            expires_at=row["expires_at"],
+        )
+
+    async def accept_invitation(self, *, token: str, password: str) -> TenantSession:
+        token_hash = self._token_hash(token)
+        user_id = f"user-{uuid4().hex}"
+        session_token = secrets.token_urlsafe(32)
+        csrf_token = secrets.token_urlsafe(32)
+        try:
+            async with self._engine.begin() as connection:
+                row = (
+                    await connection.execute(
+                        text(
+                            """
+                            SELECT
+                                i.id,
+                                i.organization_id,
+                                i.email,
+                                i.role,
+                                o.name AS organization_name,
+                                o.slug
+                            FROM organization_invitations i
+                            JOIN organizations o ON o.id = i.organization_id
+                            WHERE i.token_hash = :token_hash
+                              AND i.accepted_at IS NULL
+                              AND i.revoked_at IS NULL
+                              AND i.expires_at > now()
+                            FOR UPDATE
+                            """
+                        ),
+                        {"token_hash": token_hash},
+                    )
+                ).mappings().one_or_none()
+                if row is None:
+                    raise ValueError("邀请链接无效或已过期")
+                await connection.execute(
+                    text(
+                        """
+                        INSERT INTO users (id, email, password_hash)
+                        VALUES (:id, :email, :password_hash)
+                        """
+                    ),
+                    {
+                        "id": user_id,
+                        "email": row["email"],
+                        "password_hash": _password_hash(password),
+                    },
+                )
+                await connection.execute(
+                    text(
+                        """
+                        INSERT INTO organization_memberships
+                            (organization_id, user_id, role)
+                        VALUES (:organization_id, :user_id, :role)
+                        """
+                    ),
+                    {
+                        "organization_id": row["organization_id"],
+                        "user_id": user_id,
+                        "role": row["role"],
+                    },
+                )
+                await connection.execute(
+                    text(
+                        """
+                        UPDATE organization_invitations
+                        SET accepted_at = now()
+                        WHERE id = :id
+                        """
+                    ),
+                    {"id": row["id"]},
+                )
+                await self._insert_session(
+                    connection,
+                    token=session_token,
+                    csrf_token=csrf_token,
+                    user_id=user_id,
+                    expires_at=datetime.now(UTC) + self._session_lifetime,
+                )
+        except IntegrityError as exc:
+            raise ValueError("该邮箱已经是系统用户") from exc
+        context = TenantContext(
+            user=TenantUser(id=user_id, email=row["email"]),
+            organization=Organization(
+                id=row["organization_id"],
+                name=row["organization_name"],
+                slug=row["slug"],
+                url=f"https://{row['slug']}.{self._root_domain}",
+            ),
+            role=row["role"],
+        )
+        return TenantSession(
+            context=context,
+            token=session_token,
+            csrf_token=csrf_token,
+        )
+
+    async def list_members(self, context: TenantContext) -> list[OrganizationMember]:
+        async with self._engine.connect() as connection:
+            rows = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT
+                            u.id AS user_id,
+                            u.email,
+                            m.role,
+                            m.created_at AS joined_at
+                        FROM organization_memberships m
+                        JOIN users u ON u.id = m.user_id
+                        WHERE m.organization_id = :organization_id
+                          AND u.is_active = true
+                        ORDER BY m.created_at
+                        """
+                    ),
+                    {"organization_id": context.organization.id},
+                )
+            ).mappings().all()
+        return [OrganizationMember.model_validate(row) for row in rows]
+
+    async def list_invitations(
+        self,
+        context: TenantContext,
+    ) -> list[TenantInvitation]:
+        async with self._engine.connect() as connection:
+            rows = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT id, email, role, expires_at, created_at
+                        FROM organization_invitations
+                        WHERE organization_id = :organization_id
+                          AND accepted_at IS NULL
+                          AND revoked_at IS NULL
+                          AND expires_at > now()
+                        ORDER BY created_at
+                        """
+                    ),
+                    {"organization_id": context.organization.id},
+                )
+            ).mappings().all()
+        return [TenantInvitation.model_validate(row) for row in rows]
+
+    async def revoke_invitation(
+        self,
+        context: TenantContext,
+        invitation_id: str,
+    ) -> None:
+        async with self._engine.begin() as connection:
+            result = await connection.execute(
+                text(
+                    """
+                    UPDATE organization_invitations
+                    SET revoked_at = now()
+                    WHERE id = :id
+                      AND organization_id = :organization_id
+                      AND accepted_at IS NULL
+                      AND revoked_at IS NULL
+                    """
+                ),
+                {
+                    "id": invitation_id,
+                    "organization_id": context.organization.id,
+                },
+            )
+        if result.rowcount == 0:
+            raise KeyError(invitation_id)
 
     async def resolve(
         self,

@@ -1,0 +1,9 @@
+name,reach,impact,confidence,effort,description
+默认知识库与首次使用引导,100,massive,high,xs,缩短注册到首次证据回答的路径
+成员邀请与角色权限,80,massive,high,m,让产品从个人试用进入真实企业协作
+文档来源管理,70,high,high,m,查看删除重试和重建单个来源
+用量配额与成本看板,60,high,medium,m,支持容量保护和商业套餐
+审计日志与备份恢复,40,high,high,m,满足付费试点的数据治理底线
+企业品牌与自定义域名,50,medium,medium,m,提升白标交付和客户认同
+套餐支付与发票,30,massive,medium,l,验证付费后自动化商业闭环
+SSO与SCIM,15,high,medium,l,面向更大企业的身份生命周期集成

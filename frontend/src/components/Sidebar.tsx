@@ -4,6 +4,7 @@ import {
   Database,
   MessageSquareText,
   Settings,
+  Users,
   type LucideIcon
 } from "lucide-react";
 import type { NavKey } from "../types";
@@ -19,6 +20,7 @@ const items: Array<{ key: NavKey; label: string; icon: LucideIcon }> = [
   { key: "knowledge", label: "知识库", icon: BookOpen },
   { key: "ingestion", label: "文档摄取", icon: Database },
   { key: "evaluation", label: "质量评测", icon: BarChart3 },
+  { key: "team", label: "团队成员", icon: Users },
   { key: "settings", label: "系统设置", icon: Settings }
 ];
 

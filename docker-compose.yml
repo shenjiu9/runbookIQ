@@ -106,7 +106,13 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:-runbookiq}
     volumes:
       - ./infra/postgres/002-tenancy.sql:/migrations/002-tenancy.sql:ro
-    command: ["psql", "-v", "ON_ERROR_STOP=1", "-f", "/migrations/002-tenancy.sql"]
+      - ./infra/postgres/003-organization-invitations.sql:/migrations/003-organization-invitations.sql:ro
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        psql -v ON_ERROR_STOP=1 -f /migrations/002-tenancy.sql &&
+        psql -v ON_ERROR_STOP=1 -f /migrations/003-organization-invitations.sql
     depends_on:
       postgres:
         condition: service_healthy

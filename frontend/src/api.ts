@@ -1,10 +1,15 @@
 import type {
   EvaluationReport,
   EvaluationSuite,
+  CreatedTenantInvitation,
   IngestionJob,
   KnowledgeBase,
+  OrganizationMember,
   QueryResponse,
   RegistrationInput,
+  TenantInvitation,
+  TenantInvitationPreview,
+  TenantRole,
   TenantContext,
   RuntimeConfig
 } from "./types";
@@ -119,6 +124,66 @@ export async function fetchCurrentUser(): Promise<TenantContext> {
   return decode<TenantContext>(
     await apiFetch(`${API_BASE_URL}/api/auth/me`)
   );
+}
+
+export async function previewInvitation(
+  token: string
+): Promise<TenantInvitationPreview> {
+  return decode<TenantInvitationPreview>(
+    await apiFetch(`${API_BASE_URL}/api/auth/invitations/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token })
+    })
+  );
+}
+
+export async function acceptInvitation(
+  token: string,
+  password: string
+): Promise<TenantContext> {
+  return decode<TenantContext>(
+    await apiFetch(`${API_BASE_URL}/api/auth/invitations/accept`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password })
+    })
+  );
+}
+
+export async function listOrganizationMembers(): Promise<OrganizationMember[]> {
+  return decode<OrganizationMember[]>(
+    await apiFetch(`${API_BASE_URL}/api/organization/members`)
+  );
+}
+
+export async function listOrganizationInvitations(): Promise<TenantInvitation[]> {
+  return decode<TenantInvitation[]>(
+    await apiFetch(`${API_BASE_URL}/api/organization/invitations`)
+  );
+}
+
+export async function createOrganizationInvitation(
+  email: string,
+  role: Exclude<TenantRole, "owner">
+): Promise<CreatedTenantInvitation> {
+  return decode<CreatedTenantInvitation>(
+    await apiFetch(`${API_BASE_URL}/api/organization/invitations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, role })
+    })
+  );
+}
+
+export async function revokeOrganizationInvitation(
+  invitationId: string
+): Promise<void> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/organization/invitations/${encodeURIComponent(invitationId)}`,
+    { method: "DELETE" }
+  );
+  if (!response.ok) await decode(response);
 }
 
 export async function logout(): Promise<void> {
