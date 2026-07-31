@@ -3,17 +3,20 @@ import {
   askRunbook,
   createKnowledgeBase,
   deleteKnowledgeBase,
+  fetchCurrentUser,
   fetchHealth,
   fetchLatestEvaluation,
   fetchRuntimeConfig,
   listEvaluationSuites,
   listKnowledgeBases,
+  logout,
   runEvaluation,
   uploadDocument
 } from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { AskView } from "./pages/AskView";
+import { AuthView } from "./pages/AuthView";
 import { EvaluationView, IngestionView, KnowledgeView, SettingsView } from "./pages/SecondaryViews";
 import type {
   EvaluationReport,
@@ -22,7 +25,8 @@ import type {
   KnowledgeBase,
   NavKey,
   QueryResponse,
-  RuntimeConfig
+  RuntimeConfig,
+  TenantContext
 } from "./types";
 
 const defaultQuestion = "配置发布后 Deployment 进入 CrashLoopBackOff，应该优先检查什么？";
@@ -34,6 +38,7 @@ const emptyResponse: QueryResponse = {
 };
 
 export default function App() {
+  const [tenant, setTenant] = useState<TenantContext | null | undefined>(undefined);
   const [active, setActive] = useState<NavKey>("ask");
   const [question, setQuestion] = useState(defaultQuestion);
   const [response, setResponse] = useState<QueryResponse>(emptyResponse);
@@ -59,6 +64,15 @@ export default function App() {
   const [runtimeConfigError, setRuntimeConfigError] = useState<string | null>(null);
 
   useEffect(() => {
+    void fetchCurrentUser()
+      .then(setTenant)
+      .catch(() => setTenant(null));
+  }, []);
+
+  useEffect(() => {
+    if (!tenant) return;
+    setCatalogLoading(true);
+    setCatalogError(null);
     void Promise.allSettled([
       listKnowledgeBases(),
       fetchHealth(),
@@ -84,10 +98,10 @@ export default function App() {
         setCatalogLoading(false);
       }
     );
-  }, []);
+  }, [tenant]);
 
   useEffect(() => {
-    if (!selectedKnowledgeBaseId) {
+    if (!tenant || !selectedKnowledgeBaseId) {
       setEvaluationSuites([]);
       setSelectedEvaluationSuiteId("");
       setEvaluationReport(null);
@@ -125,7 +139,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedKnowledgeBaseId]);
+  }, [selectedKnowledgeBaseId, tenant]);
 
   async function investigate() {
     if (!selectedKnowledgeBaseId) return;
@@ -197,7 +211,10 @@ export default function App() {
     try {
       await deleteKnowledgeBase(knowledgeBaseId);
       setKnowledgeBases((current) => current.filter((item) => item.id !== knowledgeBaseId));
-      if (selectedKnowledgeBaseId === knowledgeBaseId) selectKnowledgeBase("platform");
+      if (selectedKnowledgeBaseId === knowledgeBaseId) {
+        const nextId = knowledgeBases.find((item) => item.id !== knowledgeBaseId)?.id ?? "";
+        selectKnowledgeBase(nextId);
+      }
     } catch (error) {
       setCatalogError(error instanceof Error ? error.message : "知识库删除失败");
     } finally {
@@ -209,13 +226,44 @@ export default function App() {
     (item) => item.id === selectedKnowledgeBaseId
   );
 
+  async function signOut() {
+    try {
+      await logout();
+    } finally {
+      setTenant(null);
+      setKnowledgeBases([]);
+      setSelectedKnowledgeBaseId("");
+      setResponse(emptyResponse);
+    }
+  }
+
+  if (tenant === undefined) {
+    return (
+      <main className="session-loading" aria-live="polite">
+        <span className="brand-mark">R</span>
+        <strong>正在安全连接企业空间...</strong>
+      </main>
+    );
+  }
+
+  if (tenant === null) {
+    return <AuthView onAuthenticated={setTenant} />;
+  }
+
   return (
     <div className="app-shell">
-      <Sidebar active={active} onChange={setActive} />
+      <Sidebar
+        active={active}
+        onChange={setActive}
+        organizationName={tenant.organization.name}
+      />
       <div className="app-main">
         <Topbar
           healthy={systemHealthy}
           knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"}
+          organizationName={tenant.organization.name}
+          userEmail={tenant.user.email}
+          onLogout={() => void signOut()}
         />
         <main>
           {active === "ask" ? (

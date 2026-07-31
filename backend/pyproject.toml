@@ -20,6 +20,7 @@ dependencies = [
   "fastembed>=0.7,<1",
   "beautifulsoup4>=4.13,<5",
   "markdown-it-py>=3.0,<5",
+  "argon2-cffi>=23.1,<26",
 ]
 
 [dependency-groups]

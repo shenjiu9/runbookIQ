@@ -56,6 +56,8 @@ compose=(
 )
 
 RUNBOOKIQ_RELEASE="${version}" "${compose[@]}" config --quiet
+RUNBOOKIQ_RELEASE="${version}" "${compose[@]}" run --rm --no-deps caddy \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 RUNBOOKIQ_RELEASE="${version}" "${compose[@]}" build
 RUNBOOKIQ_RELEASE="${version}" "${compose[@]}" up -d --remove-orphans
 

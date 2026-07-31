@@ -11,6 +11,7 @@ from runbookiq.adapters.openai_compatible import (
 )
 from runbookiq.adapters.postgres import PostgresKnowledgeIndex
 from runbookiq.adapters.reranking import ChatReranker
+from runbookiq.adapters.tenancy import PostgresTenantAccess
 from runbookiq.app import create_app, create_local_app
 from runbookiq.evaluation.engine import ChatFaithfulnessJudge, EvaluationEngine
 from runbookiq.ingestion.chunker import ParentChildChunker
@@ -102,6 +103,11 @@ def build_app():
 
     index = PostgresKnowledgeIndex(database)
     knowledge_bases = PostgresKnowledgeBaseCatalog(database)
+    tenant_access = PostgresTenantAccess(
+        database,
+        root_domain=settings.root_domain,
+        session_hours=settings.session_hours,
+    )
     investigator = InvestigationEngine(
         query_rewriter=ChatQueryRewriter(chat),
         embedder=embedder,
@@ -133,8 +139,18 @@ def build_app():
         ingestion=ingestion,
         evaluator=evaluator,
         knowledge_bases=knowledge_bases,
+        tenant_access=tenant_access,
         query_timeout_seconds=settings.query_timeout_seconds,
         runtime_config=settings.public_runtime_config(),
+        secure_cookies=settings.secure_cookies,
+        production_mode=True,
+        allowed_hosts=[
+            settings.root_domain,
+            f"*.{settings.root_domain}",
+            "api",
+            "localhost",
+            "127.0.0.1",
+        ],
     )
 
 

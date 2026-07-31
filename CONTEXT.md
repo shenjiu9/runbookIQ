@@ -15,18 +15,26 @@ RunbookIQ is an incident-investigation RAG workbench for SRE and platform teams.
 - **Trace**: observable timing, candidate counts, and scores for each retrieval/generation stage.
 - **Evaluation suite**: versioned questions, expected source identifiers, and optional reference answers.
 - **Ingestion job**: an asynchronous, retryable source-processing operation.
+- **Organization**: an enterprise tenant that owns members, domains, and knowledge bases.
+- **Tenant context**: the authenticated user, organization, and role resolved for one request.
+- **Tenant domain**: a verified hostname routed to exactly one organization.
 
 ## Confirmed public seams
 
 Tests exercise behavior only through:
 
-1. `POST/GET/DELETE /api/knowledge-bases`
-2. `POST /api/query`
-3. `POST /api/documents`
-4. `GET /api/ingestion/jobs/{job_id}`
-5. `GET /api/knowledge-bases/{knowledge_base_id}/evaluation-suites`
-6. `POST /api/evaluations/run`
-7. `GET /api/evaluations/latest?knowledge_base_id={knowledge_base_id}`
+1. `POST /api/auth/register`
+2. `POST /api/auth/login`
+3. `GET /api/auth/me`
+4. `POST /api/auth/logout`
+5. `POST/GET/DELETE /api/knowledge-bases`
+6. `POST /api/query`
+7. `POST /api/documents`
+8. `GET /api/ingestion/jobs/{job_id}`
+9. `GET /api/knowledge-bases/{knowledge_base_id}/evaluation-suites`
+10. `POST /api/evaluations/run`
+11. `GET /api/evaluations/latest?knowledge_base_id={knowledge_base_id}`
+12. `GET /api/internal/tls/allow?domain={tenant_domain}`
 
 The database, embedding model, reranker, object store, queue, and chat model are external seams
 with production and in-memory adapters.

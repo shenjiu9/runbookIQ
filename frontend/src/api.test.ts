@@ -5,10 +5,13 @@ import {
   createKnowledgeBase,
   deleteKnowledgeBase,
   fetchLatestEvaluation,
+  fetchCurrentUser,
   fetchRuntimeConfig,
   listEvaluationSuites,
   listKnowledgeBases,
+  login,
   QUERY_TIMEOUT_MS,
+  register,
   runEvaluation
 } from "./api";
 
@@ -84,6 +87,7 @@ describe("askRunbook", () => {
       )
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", { cookie: "runbookiq_csrf=csrf-browser-token" });
 
     expect(await listKnowledgeBases()).toEqual([knowledgeBase]);
     expect(await createKnowledgeBase("财务制度", "报销与预算")).toEqual(knowledgeBase);
@@ -94,6 +98,12 @@ describe("askRunbook", () => {
       ["http://127.0.0.1:8004/api/knowledge-bases", "POST"],
       ["http://127.0.0.1:8004/api/knowledge-bases/kb-finance", "DELETE"]
     ]);
+    expect(new Headers(fetchMock.mock.calls[1][1].headers).get("X-CSRF-Token")).toBe(
+      "csrf-browser-token"
+    );
+    expect(new Headers(fetchMock.mock.calls[2][1].headers).get("X-CSRF-Token")).toBe(
+      "csrf-browser-token"
+    );
   });
 
   it("reads the browser-safe runtime configuration", async () => {
@@ -121,7 +131,59 @@ describe("askRunbook", () => {
 
     expect(await fetchRuntimeConfig()).toEqual(runtimeConfig);
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8004/api/runtime-config"
+      "http://127.0.0.1:8004/api/runtime-config",
+      expect.objectContaining({ credentials: "include" })
+    );
+  });
+
+  it("registers and authenticates an enterprise with cookie credentials", async () => {
+    const context = {
+      user: { id: "user-1", email: "owner@alpha.example" },
+      organization: {
+        id: "org-1",
+        name: "Alpha Manufacturing",
+        slug: "alpha",
+        url: "https://alpha.knowledge.test"
+      },
+      role: "owner"
+    };
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(context), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await register({
+      email: "owner@alpha.example",
+      password: "Strong-password-2026",
+      organization_name: "Alpha Manufacturing",
+      slug: "alpha"
+    });
+    await login("owner@alpha.example", "Strong-password-2026");
+    await fetchCurrentUser();
+
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "http://127.0.0.1:8004/api/auth/register",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include"
+      })
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      email: "owner@alpha.example",
+      password: "Strong-password-2026",
+      organization_name: "Alpha Manufacturing",
+      slug: "alpha"
+    });
+    expect(fetchMock.mock.calls[1][1]).toEqual(
+      expect.objectContaining({ method: "POST", credentials: "include" })
+    );
+    expect(fetchMock.mock.calls[2][1]).toEqual(
+      expect.objectContaining({ credentials: "include" })
     );
   });
 
