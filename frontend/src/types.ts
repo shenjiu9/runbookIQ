@@ -98,6 +98,36 @@ export type TenantContext = {
   role: "owner" | "admin" | "editor" | "viewer";
 };
 
+export type TenantRole = TenantContext["role"];
+
+export type OrganizationMember = {
+  user_id: string;
+  email: string;
+  role: TenantRole;
+  joined_at: string;
+};
+
+export type TenantInvitation = {
+  id: string;
+  email: string;
+  role: Exclude<TenantRole, "owner">;
+  expires_at: string;
+  created_at: string;
+};
+
+export type CreatedTenantInvitation = TenantInvitation & {
+  token: string;
+  accept_url: string;
+};
+
+export type TenantInvitationPreview = {
+  email: string;
+  role: Exclude<TenantRole, "owner">;
+  organization_name: string;
+  organization_url: string;
+  expires_at: string;
+};
+
 export type RegistrationInput = {
   email: string;
   password: string;
@@ -105,4 +135,10 @@ export type RegistrationInput = {
   slug: string;
 };
 
-export type NavKey = "ask" | "knowledge" | "ingestion" | "evaluation" | "settings";
+export type NavKey =
+  | "ask"
+  | "knowledge"
+  | "ingestion"
+  | "evaluation"
+  | "team"
+  | "settings";

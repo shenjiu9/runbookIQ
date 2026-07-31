@@ -18,6 +18,8 @@ RunbookIQ is an incident-investigation RAG workbench for SRE and platform teams.
 - **Organization**: an enterprise tenant that owns members, domains, and knowledge bases.
 - **Tenant context**: the authenticated user, organization, and role resolved for one request.
 - **Tenant domain**: a verified hostname routed to exactly one organization.
+- **Organization invitation**: a one-time, expiring credential that creates a member in
+  exactly one organization with an admin, editor, or viewer role.
 
 ## Confirmed public seams
 
@@ -35,6 +37,11 @@ Tests exercise behavior only through:
 10. `POST /api/evaluations/run`
 11. `GET /api/evaluations/latest?knowledge_base_id={knowledge_base_id}`
 12. `GET /api/internal/tls/allow?domain={tenant_domain}`
+13. `POST /api/auth/invitations/preview`
+14. `POST /api/auth/invitations/accept`
+15. `GET /api/organization/members`
+16. `GET/POST /api/organization/invitations`
+17. `DELETE /api/organization/invitations/{invitation_id}`
 
 The database, embedding model, reranker, object store, queue, and chat model are external seams
 with production and in-memory adapters.

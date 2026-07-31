@@ -14,6 +14,7 @@ export function EvaluationSummary({
   selectedSuiteId,
   catalogLoading,
   loading,
+  canRun,
   onSuiteChange,
   onRun
 }: {
@@ -22,6 +23,7 @@ export function EvaluationSummary({
   selectedSuiteId: string;
   catalogLoading: boolean;
   loading: boolean;
+  canRun: boolean;
   onSuiteChange: (suiteId: string) => void;
   onRun: () => void;
 }) {
@@ -78,12 +80,14 @@ export function EvaluationSummary({
       <button
         className="text-action summary-action"
         onClick={onRun}
-        disabled={loading || catalogLoading || !selectedSuiteId}
+        disabled={loading || catalogLoading || !selectedSuiteId || !canRun}
       >
         {loading ? <LoaderCircle className="spin" size={13} /> : <ExternalLink size={13} />}
         {loading
           ? "正在评测…"
-          : suites.length === 0
+          : !canRun
+            ? "只读账号不可运行"
+            : suites.length === 0
             ? "尚未配置评测集"
             : report
               ? "重新运行快速评测"

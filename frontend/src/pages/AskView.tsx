@@ -28,6 +28,7 @@ type Props = {
   selectedEvaluationSuiteId: string;
   evaluationCatalogLoading: boolean;
   evaluationLoading: boolean;
+  canRunEvaluation: boolean;
   onEvaluationSuiteChange: (suiteId: string) => void;
   onEvaluate: () => void;
   knowledgeBases: KnowledgeBase[];
@@ -53,6 +54,7 @@ export function AskView({
   selectedEvaluationSuiteId,
   evaluationCatalogLoading,
   evaluationLoading,
+  canRunEvaluation,
   onEvaluationSuiteChange,
   onEvaluate,
   knowledgeBases,
@@ -119,6 +121,7 @@ export function AskView({
               selectedSuiteId={selectedEvaluationSuiteId}
               catalogLoading={evaluationCatalogLoading}
               loading={evaluationLoading}
+              canRun={canRunEvaluation}
               onSuiteChange={onEvaluationSuiteChange}
               onRun={onEvaluate}
             />

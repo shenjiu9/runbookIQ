@@ -1,14 +1,23 @@
-import { Building2, CheckCircle2, LockKeyhole, Mail } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { Building2, CheckCircle2, LockKeyhole, Mail, Users } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
 
-import { login, register } from "../api";
-import type { TenantContext } from "../types";
+import { acceptInvitation, login, previewInvitation, register } from "../api";
+import type { TenantContext, TenantInvitationPreview } from "../types";
 
 type Props = {
   onAuthenticated: (context: TenantContext) => void;
 };
 
 export function AuthView({ onAuthenticated }: Props) {
+  const [invitationToken] = useState(() => (
+    typeof window === "undefined"
+      ? ""
+      : new URLSearchParams(window.location.hash.slice(1)).get("invite")
+        ?? new URLSearchParams(window.location.search).get("invite")
+        ?? ""
+  ));
+  const [invitation, setInvitation] = useState<TenantInvitationPreview | null>(null);
+  const [invitationLoading, setInvitationLoading] = useState(Boolean(invitationToken));
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,19 +26,34 @@ export function AuthView({ onAuthenticated }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!invitationToken) return;
+    void previewInvitation(invitationToken)
+      .then(setInvitation)
+      .catch((nextError) => {
+        setError(nextError instanceof Error ? nextError.message : "邀请链接无效");
+      })
+      .finally(() => setInvitationLoading(false));
+  }, [invitationToken]);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
-      const context = mode === "login"
-        ? await login(email, password)
-        : await register({
-            email,
-            password,
-            organization_name: organizationName,
-            slug
-          });
+      const context = invitationToken
+        ? await acceptInvitation(invitationToken, password)
+        : mode === "login"
+          ? await login(email, password)
+          : await register({
+              email,
+              password,
+              organization_name: organizationName,
+              slug
+            });
+      if (invitationToken && typeof window !== "undefined") {
+        window.history.replaceState({}, "", window.location.pathname);
+      }
       onAuthenticated(context);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "认证失败，请稍后重试");
@@ -59,7 +83,7 @@ export function AuthView({ onAuthenticated }: Props) {
       </section>
 
       <section className="auth-card" aria-labelledby="auth-title">
-        <div className="auth-mode" role="tablist" aria-label="账号入口">
+        {!invitationToken ? <div className="auth-mode" role="tablist" aria-label="账号入口">
           <button
             type="button"
             role="tab"
@@ -84,18 +108,44 @@ export function AuthView({ onAuthenticated }: Props) {
           >
             创建企业空间
           </button>
-        </div>
+        </div> : null}
 
         <div className="auth-card-heading">
-          <span className="auth-icon"><LockKeyhole size={22} /></span>
+          <span className="auth-icon">
+            {invitationToken ? <Users size={22} /> : <LockKeyhole size={22} />}
+          </span>
           <div>
-            <h2 id="auth-title">{mode === "login" ? "欢迎回来" : "开始创建企业知识库"}</h2>
-            <p>{mode === "login" ? "登录后继续管理企业知识。" : "注册成功后将自动生成专属企业网址。"}</p>
+            <h2 id="auth-title">
+              {invitationToken
+                ? "加入企业知识空间"
+                : mode === "login"
+                  ? "欢迎回来"
+                  : "开始创建企业知识库"}
+            </h2>
+            <p>
+              {invitationToken
+                ? invitationLoading
+                  ? "正在验证邀请链接…"
+                  : invitation
+                    ? `${invitation.organization_name} 邀请你以“${roleLabel(invitation.role)}”身份加入。`
+                    : "请检查邀请链接是否完整或联系企业管理员。"
+                : mode === "login"
+                  ? "登录后继续管理企业知识。"
+                  : "注册成功后将自动生成专属企业网址。"}
+            </p>
           </div>
         </div>
 
         <form className="auth-form" onSubmit={submit}>
-          {mode === "register" ? (
+          {invitation ? (
+            <div className="invitation-summary">
+              <span>受邀邮箱</span>
+              <strong>{invitation.email}</strong>
+              <small>接受后可进入 {invitation.organization_url}</small>
+            </div>
+          ) : null}
+
+          {!invitationToken && mode === "register" ? (
             <>
               <label>
                 <span>企业名称</span>
@@ -129,7 +179,7 @@ export function AuthView({ onAuthenticated }: Props) {
             </>
           ) : null}
 
-          <label>
+          {!invitationToken ? <label>
             <span>邮箱</span>
             <div className="auth-input">
               <Mail size={19} />
@@ -142,7 +192,7 @@ export function AuthView({ onAuthenticated }: Props) {
                 placeholder="name@company.com"
               />
             </div>
-          </label>
+          </label> : null}
           <label>
             <span>密码</span>
             <div className="auth-input">
@@ -150,26 +200,40 @@ export function AuthView({ onAuthenticated }: Props) {
               <input
                 required
                 type="password"
-                minLength={mode === "register" ? 12 : 1}
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                minLength={invitationToken || mode === "register" ? 12 : 1}
+                autoComplete={invitationToken || mode === "register" ? "new-password" : "current-password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder={mode === "register" ? "至少 12 位" : "输入密码"}
+                placeholder={invitationToken || mode === "register" ? "设置至少 12 位密码" : "输入密码"}
               />
             </div>
           </label>
 
           {error ? <div className="auth-error" role="alert">{error}</div> : null}
 
-          <button className="auth-submit" type="submit" disabled={submitting}>
+          <button
+            className="auth-submit"
+            type="submit"
+            disabled={submitting || invitationLoading || (Boolean(invitationToken) && !invitation)}
+          >
             {submitting
               ? "正在处理..."
-              : mode === "login"
-                ? "登录企业空间"
-                : "创建企业空间"}
+              : invitationToken
+                ? "接受邀请并进入"
+                : mode === "login"
+                  ? "登录企业空间"
+                  : "创建企业空间"}
           </button>
         </form>
       </section>
     </main>
   );
+}
+
+function roleLabel(role: TenantInvitationPreview["role"]) {
+  return {
+    admin: "管理员",
+    editor: "内容编辑者",
+    viewer: "只读成员"
+  }[role];
 }

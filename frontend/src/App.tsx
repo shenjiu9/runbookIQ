@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   askRunbook,
+  createOrganizationInvitation,
   createKnowledgeBase,
   deleteKnowledgeBase,
   fetchCurrentUser,
@@ -9,7 +10,10 @@ import {
   fetchRuntimeConfig,
   listEvaluationSuites,
   listKnowledgeBases,
+  listOrganizationInvitations,
+  listOrganizationMembers,
   logout,
+  revokeOrganizationInvitation,
   runEvaluation,
   uploadDocument
 } from "./api";
@@ -17,15 +21,25 @@ import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { AskView } from "./pages/AskView";
 import { AuthView } from "./pages/AuthView";
-import { EvaluationView, IngestionView, KnowledgeView, SettingsView } from "./pages/SecondaryViews";
+import {
+  EvaluationView,
+  IngestionView,
+  KnowledgeView,
+  SettingsView,
+  TeamView
+} from "./pages/SecondaryViews";
 import type {
+  CreatedTenantInvitation,
   EvaluationReport,
   EvaluationSuite,
   IngestionJob,
   KnowledgeBase,
   NavKey,
+  OrganizationMember,
   QueryResponse,
   RuntimeConfig,
+  TenantInvitation,
+  TenantRole,
   TenantContext
 } from "./types";
 
@@ -62,6 +76,12 @@ export default function App() {
   const [systemHealthy, setSystemHealthy] = useState<boolean | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [runtimeConfigError, setRuntimeConfigError] = useState<string | null>(null);
+  const [members, setMembers] = useState<OrganizationMember[]>([]);
+  const [invitations, setInvitations] = useState<TenantInvitation[]>([]);
+  const [createdInvitation, setCreatedInvitation] =
+    useState<CreatedTenantInvitation | null>(null);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState<string | null>(null);
 
   useEffect(() => {
     void fetchCurrentUser()
@@ -98,6 +118,24 @@ export default function App() {
         setCatalogLoading(false);
       }
     );
+  }, [tenant]);
+
+  useEffect(() => {
+    if (!tenant) return;
+    setTeamLoading(true);
+    setTeamError(null);
+    const invitationsRequest = tenant.role === "owner" || tenant.role === "admin"
+      ? listOrganizationInvitations()
+      : Promise.resolve([]);
+    void Promise.all([listOrganizationMembers(), invitationsRequest])
+      .then(([nextMembers, nextInvitations]) => {
+        setMembers(nextMembers);
+        setInvitations(nextInvitations);
+      })
+      .catch((error) => {
+        setTeamError(error instanceof Error ? error.message : "团队信息加载失败");
+      })
+      .finally(() => setTeamLoading(false));
   }, [tenant]);
 
   useEffect(() => {
@@ -222,6 +260,46 @@ export default function App() {
     }
   }
 
+  async function inviteMember(
+    email: string,
+    role: Exclude<TenantRole, "owner">
+  ) {
+    setTeamLoading(true);
+    setTeamError(null);
+    try {
+      const created = await createOrganizationInvitation(email, role);
+      setCreatedInvitation(created);
+      setInvitations((current) => [
+        ...current,
+        {
+          id: created.id,
+          email: created.email,
+          role: created.role,
+          expires_at: created.expires_at,
+          created_at: created.created_at
+        }
+      ]);
+    } catch (error) {
+      setTeamError(error instanceof Error ? error.message : "成员邀请创建失败");
+    } finally {
+      setTeamLoading(false);
+    }
+  }
+
+  async function revokeInvitation(invitationId: string) {
+    setTeamLoading(true);
+    setTeamError(null);
+    try {
+      await revokeOrganizationInvitation(invitationId);
+      setInvitations((current) => current.filter((item) => item.id !== invitationId));
+      if (createdInvitation?.id === invitationId) setCreatedInvitation(null);
+    } catch (error) {
+      setTeamError(error instanceof Error ? error.message : "邀请撤销失败");
+    } finally {
+      setTeamLoading(false);
+    }
+  }
+
   const selectedKnowledgeBase = knowledgeBases.find(
     (item) => item.id === selectedKnowledgeBaseId
   );
@@ -283,6 +361,7 @@ export default function App() {
               selectedEvaluationSuiteId={selectedEvaluationSuiteId}
               evaluationCatalogLoading={evaluationCatalogLoading}
               evaluationLoading={evaluationLoading}
+              canRunEvaluation={tenant.role !== "viewer"}
               onEvaluationSuiteChange={setSelectedEvaluationSuiteId}
               onEvaluate={evaluate}
               knowledgeBases={knowledgeBases}
@@ -301,9 +380,12 @@ export default function App() {
               onSelect={selectKnowledgeBase}
               onCreate={addKnowledgeBase}
               onDelete={removeKnowledgeBase}
+              role={tenant.role}
+              onStartUpload={() => setActive("ingestion")}
+              onStartAsk={() => setActive("ask")}
             />
           ) : null}
-          {active === "ingestion" ? <IngestionView knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"} job={ingestionJob} loading={ingestionLoading} error={ingestionError} onUpload={ingest} /> : null}
+          {active === "ingestion" ? <IngestionView knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"} job={ingestionJob} loading={ingestionLoading} error={ingestionError} onUpload={ingest} role={tenant.role} /> : null}
           {active === "evaluation" ? (
             <EvaluationView
               knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"}
@@ -315,6 +397,21 @@ export default function App() {
               error={evaluationError}
               onSuiteChange={setSelectedEvaluationSuiteId}
               onRun={evaluate}
+              role={tenant.role}
+            />
+          ) : null}
+          {active === "team" ? (
+            <TeamView
+              organizationName={tenant.organization.name}
+              organizationUrl={tenant.organization.url}
+              currentRole={tenant.role}
+              members={members}
+              invitations={invitations}
+              createdInvitation={createdInvitation}
+              loading={teamLoading}
+              error={teamError}
+              onInvite={inviteMember}
+              onRevoke={revokeInvitation}
             />
           ) : null}
           {active === "settings" ? (
