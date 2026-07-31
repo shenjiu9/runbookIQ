@@ -84,4 +84,25 @@ export type RuntimeConfig = {
   max_document_mib: number;
 };
 
+export type TenantContext = {
+  user: {
+    id: string;
+    email: string;
+  };
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+    url: string;
+  };
+  role: "owner" | "admin" | "editor" | "viewer";
+};
+
+export type RegistrationInput = {
+  email: string;
+  password: string;
+  organization_name: string;
+  slug: string;
+};
+
 export type NavKey = "ask" | "knowledge" | "ingestion" | "evaluation" | "settings";

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 768
     fastembed_cache_dir: str = ".cache/fastembed"
     allowed_origins: str = "http://localhost:5173,http://localhost:8080"
+    root_domain: str = "rag.xn--bang-fe6gk6c.top"
+    secure_cookies: bool = True
+    session_hours: int = Field(default=168, ge=1, le=24 * 90)
 
     @property
     def origins(self) -> list[str]:

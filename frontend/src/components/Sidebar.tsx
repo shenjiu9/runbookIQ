@@ -11,6 +11,7 @@ import type { NavKey } from "../types";
 type Props = {
   active: NavKey;
   onChange: (key: NavKey) => void;
+  organizationName: string;
 };
 
 const items: Array<{ key: NavKey; label: string; icon: LucideIcon }> = [
@@ -21,7 +22,7 @@ const items: Array<{ key: NavKey; label: string; icon: LucideIcon }> = [
   { key: "settings", label: "系统设置", icon: Settings }
 ];
 
-export function Sidebar({ active, onChange }: Props) {
+export function Sidebar({ active, onChange, organizationName }: Props) {
   return (
     <aside className="sidebar">
       <div className="brand-wrap">
@@ -45,7 +46,7 @@ export function Sidebar({ active, onChange }: Props) {
       </nav>
       <div className="sidebar-meta">
         <span className="meta-label">当前工作空间</span>
-        <strong>平台工程团队</strong>
+        <strong>{organizationName}</strong>
         <div className="environment"><i />生产环境</div>
       </div>
     </aside>

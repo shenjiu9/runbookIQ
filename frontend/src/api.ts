@@ -4,6 +4,8 @@ import type {
   IngestionJob,
   KnowledgeBase,
   QueryResponse,
+  RegistrationInput,
+  TenantContext,
   RuntimeConfig
 } from "./types";
 
@@ -15,6 +17,24 @@ export const QUERY_TIMEOUT_MS = 65_000;
 export type HealthResponse = {
   status: string;
 };
+
+function apiFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {}
+): Promise<Response> {
+  const headers = new Headers(init.headers);
+  const method = (init.method ?? "GET").toUpperCase();
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    const csrfToken = typeof document === "undefined"
+      ? null
+      : document.cookie
+          .split("; ")
+          .find((item) => item.startsWith("runbookiq_csrf="))
+          ?.slice("runbookiq_csrf=".length);
+    if (csrfToken) headers.set("X-CSRF-Token", decodeURIComponent(csrfToken));
+  }
+  return fetch(input, { ...init, headers, credentials: "include" });
+}
 
 async function decode<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -32,7 +52,7 @@ async function fetchWithTimeout(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await apiFetch(input, { ...init, signal: controller.signal });
   } catch (error) {
     if (controller.signal.aborted) {
       throw new Error("调查超时：模型响应过慢，请稍后重试。");
@@ -62,14 +82,50 @@ export async function askRunbook(
 
 export async function fetchHealth(): Promise<HealthResponse> {
   return decode<HealthResponse>(
-    await fetch(`${API_BASE_URL}/api/health`)
+    await apiFetch(`${API_BASE_URL}/api/health`)
   );
 }
 
 export async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
   return decode<RuntimeConfig>(
-    await fetch(`${API_BASE_URL}/api/runtime-config`)
+    await apiFetch(`${API_BASE_URL}/api/runtime-config`)
   );
+}
+
+export async function register(input: RegistrationInput): Promise<TenantContext> {
+  return decode<TenantContext>(
+    await apiFetch(`${API_BASE_URL}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input)
+    })
+  );
+}
+
+export async function login(
+  email: string,
+  password: string
+): Promise<TenantContext> {
+  return decode<TenantContext>(
+    await apiFetch(`${API_BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    })
+  );
+}
+
+export async function fetchCurrentUser(): Promise<TenantContext> {
+  return decode<TenantContext>(
+    await apiFetch(`${API_BASE_URL}/api/auth/me`)
+  );
+}
+
+export async function logout(): Promise<void> {
+  const response = await apiFetch(`${API_BASE_URL}/api/auth/logout`, {
+    method: "POST"
+  });
+  if (!response.ok) await decode(response);
 }
 
 export async function uploadDocument(
@@ -80,7 +136,7 @@ export async function uploadDocument(
   body.append("knowledge_base_id", knowledgeBaseId);
   body.append("file", file);
   return decode<IngestionJob>(
-    await fetch(`${API_BASE_URL}/api/documents`, { method: "POST", body })
+    await apiFetch(`${API_BASE_URL}/api/documents`, { method: "POST", body })
   );
 }
 
@@ -88,7 +144,7 @@ export async function listEvaluationSuites(
   knowledgeBaseId: string
 ): Promise<EvaluationSuite[]> {
   return decode<EvaluationSuite[]>(
-    await fetch(
+    await apiFetch(
       `${API_BASE_URL}/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/evaluation-suites`
     )
   );
@@ -99,7 +155,7 @@ export async function runEvaluation(
   suiteId: string
 ): Promise<EvaluationReport> {
   return decode<EvaluationReport>(
-    await fetch(`${API_BASE_URL}/api/evaluations/run`, {
+    await apiFetch(`${API_BASE_URL}/api/evaluations/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -115,7 +171,7 @@ export async function fetchLatestEvaluation(
   knowledgeBaseId: string
 ): Promise<EvaluationReport | null> {
   return decode<EvaluationReport | null>(
-    await fetch(
+    await apiFetch(
       `${API_BASE_URL}/api/evaluations/latest?knowledge_base_id=${encodeURIComponent(knowledgeBaseId)}`
     )
   );
@@ -123,7 +179,7 @@ export async function fetchLatestEvaluation(
 
 export async function listKnowledgeBases(): Promise<KnowledgeBase[]> {
   return decode<KnowledgeBase[]>(
-    await fetch(`${API_BASE_URL}/api/knowledge-bases`)
+    await apiFetch(`${API_BASE_URL}/api/knowledge-bases`)
   );
 }
 
@@ -132,7 +188,7 @@ export async function createKnowledgeBase(
   description: string
 ): Promise<KnowledgeBase> {
   return decode<KnowledgeBase>(
-    await fetch(`${API_BASE_URL}/api/knowledge-bases`, {
+    await apiFetch(`${API_BASE_URL}/api/knowledge-bases`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, description })
@@ -141,7 +197,7 @@ export async function createKnowledgeBase(
 }
 
 export async function deleteKnowledgeBase(knowledgeBaseId: string): Promise<void> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`,
     { method: "DELETE" }
   );

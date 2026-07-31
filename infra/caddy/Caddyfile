@@ -1,3 +1,9 @@
+{
+	on_demand_tls {
+		ask http://api:8000/api/internal/tls/allow
+	}
+}
+
 {$RUNBOOKIQ_ROOT_DOMAIN:xn--bang-fe6gk6c.top} {
 	redir https://{$RUNBOOKIQ_PUBLIC_DOMAIN:rag.xn--bang-fe6gk6c.top}{uri} permanent
 }
@@ -12,6 +18,27 @@
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+	}
+
+	reverse_proxy web:80
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+
+	encode zstd gzip
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
 	}
 
 	reverse_proxy web:80

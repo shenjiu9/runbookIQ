@@ -78,9 +78,13 @@ services:
       RUNBOOKIQ_RERANK_PROVIDER: ${RUNBOOKIQ_RERANK_PROVIDER:-chat}
       RUNBOOKIQ_OCR_LANGUAGES: ${RUNBOOKIQ_OCR_LANGUAGES:-chi_sim+eng}
       RUNBOOKIQ_OCR_TIMEOUT_SECONDS: ${RUNBOOKIQ_OCR_TIMEOUT_SECONDS:-30}
+      RUNBOOKIQ_ROOT_DOMAIN: ${RUNBOOKIQ_PUBLIC_DOMAIN:-rag.xn--bang-fe6gk6c.top}
+      RUNBOOKIQ_SECURE_COOKIES: ${RUNBOOKIQ_SECURE_COOKIES:-true}
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       ollama-init:
         condition: service_completed_successfully
         required: false
@@ -92,6 +96,21 @@ services:
     restart: unless-stopped
     volumes:
       - model_cache:/models
+
+  migrate:
+    image: postgres:16-alpine
+    environment:
+      PGHOST: postgres
+      PGDATABASE: runbookiq
+      PGUSER: runbookiq
+      PGPASSWORD: ${POSTGRES_PASSWORD:-runbookiq}
+    volumes:
+      - ./infra/postgres/002-tenancy.sql:/migrations/002-tenancy.sql:ro
+    command: ["psql", "-v", "ON_ERROR_STOP=1", "-f", "/migrations/002-tenancy.sql"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   web:
     image: runbookiq-web:${RUNBOOKIQ_RELEASE:-local}

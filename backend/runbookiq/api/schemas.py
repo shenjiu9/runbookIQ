@@ -1,6 +1,36 @@
 from pydantic import BaseModel, Field, field_validator
 
 
+class RegistrationRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=12, max_length=200)
+    organization_name: str = Field(min_length=2, max_length=120)
+    slug: str = Field(min_length=2, max_length=32)
+
+    @field_validator("email", "organization_name", "slug")
+    @classmethod
+    def trim_registration_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("email")
+    @classmethod
+    def email_must_be_plausible(cls, value: str) -> str:
+        normalized = value.lower()
+        if normalized.count("@") != 1 or normalized.startswith("@") or normalized.endswith("@"):
+            raise ValueError("enter a valid email address")
+        return normalized
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=200)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+
 class KnowledgeBaseCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=500)
