@@ -8,6 +8,7 @@ import {
   deleteKnowledgeBase,
   fetchLatestEvaluation,
   fetchCurrentUser,
+  fetchOrganizationBranding,
   fetchRuntimeConfig,
   listEvaluationSuites,
   listKnowledgeBases,
@@ -18,7 +19,8 @@ import {
   QUERY_TIMEOUT_MS,
   register,
   revokeOrganizationInvitation,
-  runEvaluation
+  runEvaluation,
+  updateOrganizationBranding
 } from "./api";
 
 describe("askRunbook", () => {
@@ -41,7 +43,7 @@ describe("askRunbook", () => {
 
     const request = askRunbook("kb-operations", "为什么 Deployment 一直重启？");
     const init = fetchMock.mock.calls[0]?.[1];
-    const rejected = expect(request).rejects.toThrow("调查超时");
+    const rejected = expect(request).rejects.toThrow("问答超时");
 
     expect(init?.signal).toBeInstanceOf(AbortSignal);
     await vi.advanceTimersByTimeAsync(QUERY_TIMEOUT_MS + 1);
@@ -149,7 +151,14 @@ describe("askRunbook", () => {
         id: "org-1",
         name: "Alpha Manufacturing",
         slug: "alpha",
-        url: "https://alpha.knowledge.test"
+        url: "https://knowledge.test",
+        branding: {
+          display_name: "Alpha Manufacturing",
+          logo_url: null,
+          primary_color: "#0F766E",
+          welcome_title: "欢迎进入 Alpha 知识空间",
+          welcome_message: "检索企业资料并核验原文证据。"
+        }
       },
       role: "owner"
     };
@@ -166,8 +175,7 @@ describe("askRunbook", () => {
     await register({
       email: "owner@alpha.example",
       password: "Strong-password-2026",
-      organization_name: "Alpha Manufacturing",
-      slug: "alpha"
+      organization_name: "Alpha Manufacturing"
     });
     await login("owner@alpha.example", "Strong-password-2026");
     await fetchCurrentUser();
@@ -182,14 +190,52 @@ describe("askRunbook", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       email: "owner@alpha.example",
       password: "Strong-password-2026",
-      organization_name: "Alpha Manufacturing",
-      slug: "alpha"
+      organization_name: "Alpha Manufacturing"
     });
     expect(fetchMock.mock.calls[1][1]).toEqual(
       expect.objectContaining({ method: "POST", credentials: "include" })
     );
     expect(fetchMock.mock.calls[2][1]).toEqual(
       expect.objectContaining({ credentials: "include" })
+    );
+  });
+
+  it("reads and updates tenant-scoped enterprise branding", async () => {
+    const branding = {
+      display_name: "Alpha 知识中心",
+      logo_url: "https://assets.example.com/alpha.png",
+      primary_color: "#335CFF",
+      welcome_title: "欢迎进入 Alpha 知识中心",
+      welcome_message: "检索制度与业务资料，并核验每条原文证据。"
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(branding), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(branding), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", { cookie: "runbookiq_csrf=csrf-browser-token" });
+
+    expect(await fetchOrganizationBranding()).toEqual(branding);
+    expect(await updateOrganizationBranding(branding)).toEqual(branding);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://127.0.0.1:8004/api/organization/branding"
+    );
+    expect(fetchMock.mock.calls[1][1]).toEqual(
+      expect.objectContaining({ method: "PATCH", credentials: "include" })
+    );
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(branding);
+    expect(new Headers(fetchMock.mock.calls[1][1].headers).get("X-CSRF-Token")).toBe(
+      "csrf-browser-token"
     );
   });
 
@@ -207,7 +253,7 @@ describe("askRunbook", () => {
       expires_at: "2026-08-07T00:00:00Z",
       created_at: "2026-07-31T00:00:00Z",
       token: "secure-invitation-token",
-      accept_url: "https://alpha.knowledge.test/#invite=secure-invitation-token"
+      accept_url: "https://knowledge.test/#invite=secure-invitation-token"
     };
     const acceptedContext = {
       user: { id: "user-2", email: invitation.email },
@@ -215,7 +261,14 @@ describe("askRunbook", () => {
         id: "org-1",
         name: "Alpha Manufacturing",
         slug: "alpha",
-        url: "https://alpha.knowledge.test"
+        url: "https://knowledge.test",
+        branding: {
+          display_name: "Alpha Manufacturing",
+          logo_url: null,
+          primary_color: "#0F766E",
+          welcome_title: "欢迎进入 Alpha 知识空间",
+          welcome_message: "检索企业资料并核验原文证据。"
+        }
       },
       role: "viewer"
     };
@@ -223,7 +276,7 @@ describe("askRunbook", () => {
       email: invitation.email,
       role: invitation.role,
       organization_name: "Alpha Manufacturing",
-      organization_url: "https://alpha.knowledge.test",
+      organization_url: "https://knowledge.test",
       expires_at: invitation.expires_at
     };
     const fetchMock = vi

@@ -17,7 +17,7 @@ export function IngestionRail({
 }) {
   return (
     <section className="ingestion-rail">
-      <div className="rail-title"><span>最近摄取任务</span><small>{knowledgeBaseName}</small></div>
+      <div className="rail-title"><span>最近文档任务</span><small>{knowledgeBaseName}</small></div>
       {job ? (
         <div className="ingestion-item">
           <div className={`status-orb ${job.status}`}>
@@ -37,7 +37,7 @@ export function IngestionRail({
       ) : (
         <div className="rail-empty">
           <FileClock size={20} />
-          <div><strong>尚无摄取任务</strong><span>上传文档后，这里会显示真实处理状态。</span></div>
+          <div><strong>尚无文档任务</strong><span>上传文档后，这里会显示真实处理状态。</span></div>
         </div>
       )}
     </section>

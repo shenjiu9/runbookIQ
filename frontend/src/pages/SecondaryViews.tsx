@@ -1,4 +1,10 @@
-import { useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode
+} from "react";
 import {
   BookOpenCheck,
   CheckCircle2,
@@ -10,6 +16,7 @@ import {
   Gauge,
   LoaderCircle,
   MailPlus,
+  Palette,
   Play,
   ShieldCheck,
   ServerCog,
@@ -24,6 +31,7 @@ import type {
   IngestionJob,
   KnowledgeBase,
   OrganizationMember,
+  OrganizationBranding,
   RuntimeConfig,
   TenantInvitation,
   TenantRole
@@ -82,7 +90,7 @@ export function KnowledgeView({
           <div className="onboarding-steps">
             <div className="is-complete">
               <span><CheckCircle2 size={18} /></span>
-              <div><strong>企业空间已创建</strong><small>默认知识库与专属网址已生成</small></div>
+              <div><strong>企业空间已创建</strong><small>默认知识库与成员权限已就绪</small></div>
             </div>
             <button type="button" onClick={onStartUpload} disabled={role === "viewer"}>
               <span>2</span>
@@ -145,10 +153,10 @@ function jobStatusLabel(status: IngestionJob["status"]) {
 export function IngestionView({ knowledgeBaseName, job, loading, error, onUpload, role }: IngestionProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
-    <Section title="文档摄取" eyebrow={`目标：${knowledgeBaseName}`} description="解析、OCR、父子分块并向量化文档，同时保留完整章节上下文。">
+    <Section title="文档管理" eyebrow={`当前知识库：${knowledgeBaseName}`} description="上传企业资料，系统会完成解析、OCR、分块与索引，并保留章节上下文。">
       <button className="upload-zone" disabled={role === "viewer"} onClick={() => inputRef.current?.click()}>
         {loading ? <LoaderCircle className="spin" size={32} /> : <CloudUpload size={32} />}
-        <strong>{loading ? "正在处理文档…" : role === "viewer" ? "只读账号不可上传文档" : "上传运行手册、事故复盘或参考文档"}</strong>
+        <strong>{loading ? "正在处理文档…" : role === "viewer" ? "只读账号不可上传文档" : "上传制度、手册、业务资料或参考文档"}</strong>
         <span>支持 Markdown、TXT、PDF、DOCX 和图片 OCR · 最大 20 MiB</span>
         <input
           ref={inputRef}
@@ -312,13 +320,13 @@ export function TeamView({
 }: TeamProps) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Exclude<TenantRole, "owner">>("viewer");
-  const [copyLabel, setCopyLabel] = useState("复制专属网址");
+  const [copyLabel, setCopyLabel] = useState("复制统一入口");
   const canManage = currentRole === "owner" || currentRole === "admin";
 
   async function copy(value: string, successLabel: string) {
     await navigator.clipboard.writeText(value);
     setCopyLabel(successLabel);
-    window.setTimeout(() => setCopyLabel("复制专属网址"), 1800);
+    window.setTimeout(() => setCopyLabel("复制统一入口"), 1800);
   }
 
   async function submit() {
@@ -329,7 +337,7 @@ export function TeamView({
 
   return (
     <Section
-      title="团队成员"
+      title="成员与权限"
       eyebrow="企业协作与权限"
       description="邀请同事进入同一企业空间，并通过角色控制知识库管理与只读问答权限。"
     >
@@ -344,15 +352,15 @@ export function TeamView({
         <div>
           <span className="tenant-url-icon"><Users size={22} /></span>
           <div>
-            <strong>{organizationName} 专属入口</strong>
-            <p>企业成员可通过此网址登录并访问本企业授权的知识库。</p>
+            <strong>RunbookIQ 统一访问入口</strong>
+            <p>{organizationName} 的成员通过同一地址登录，系统会依据账号自动进入本企业空间。</p>
           </div>
         </div>
         <code>{organizationUrl}</code>
         <button
           className="secondary-button"
           type="button"
-          onClick={() => void copy(organizationUrl, "企业网址已复制")}
+          onClick={() => void copy(organizationUrl, "统一入口已复制")}
         >
           <Copy size={16} />{copyLabel}
         </button>
@@ -485,17 +493,179 @@ const providerLabels: Record<string, string> = {
 
 export function SettingsView({
   config,
-  error
+  error,
+  branding,
+  role,
+  onSaveBranding
 }: {
   config: RuntimeConfig | null;
   error: string | null;
+  branding: OrganizationBranding;
+  role: TenantRole;
+  onSaveBranding: (branding: OrganizationBranding) => Promise<OrganizationBranding>;
 }) {
+  const [draft, setDraft] = useState(branding);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const canManageBranding = role === "owner" || role === "admin";
+
+  useEffect(() => setDraft(branding), [branding]);
+
+  function updateDraft<K extends keyof OrganizationBranding>(
+    key: K,
+    value: OrganizationBranding[K]
+  ) {
+    setDraft((current) => ({ ...current, [key]: value }));
+    setSaved(false);
+  }
+
+  async function save() {
+    setSaving(true);
+    setSaveError(null);
+    setSaved(false);
+    try {
+      const next = await onSaveBranding(draft);
+      setDraft(next);
+      setSaved(true);
+    } catch (nextError) {
+      setSaveError(nextError instanceof Error ? nextError.message : "企业品牌保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <Section title="系统设置" eyebrow="安全的运行时配置" description="生产配置由服务器环境变量管理，页面不展示或缓存任何 API 密钥。">
+    <Section
+      title="企业设置"
+      eyebrow="企业界面与平台配置"
+      description="在统一产品模板中维护企业名称、品牌色和欢迎内容；底层模型配置仍由服务器安全托管。"
+    >
+      <div className="branding-layout">
+        <section className="panel branding-form">
+          <div className="settings-title">
+            <Palette size={21} />
+            <span>
+              <strong>企业品牌</strong>
+              <small>保存后立即对本企业所有成员生效</small>
+            </span>
+          </div>
+          <div className="branding-fields">
+            <label>
+              <span>企业显示名称</span>
+              <input
+                value={draft.display_name}
+                minLength={2}
+                maxLength={80}
+                disabled={!canManageBranding}
+                onChange={(event) => updateDraft("display_name", event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Logo 地址</span>
+              <input
+                value={draft.logo_url ?? ""}
+                maxLength={500}
+                disabled={!canManageBranding}
+                placeholder="https://example.com/logo.png"
+                onChange={(event) => updateDraft("logo_url", event.target.value || null)}
+              />
+              <small>支持 HTTPS 图片地址或站内相对路径，留空时显示企业首字。</small>
+            </label>
+            <label>
+              <span>品牌主色</span>
+              <div className="color-field">
+                <input
+                  type="color"
+                  value={draft.primary_color}
+                  disabled={!canManageBranding}
+                  onChange={(event) => updateDraft("primary_color", event.target.value.toUpperCase())}
+                />
+                <input
+                  value={draft.primary_color}
+                  pattern="^#[0-9A-Fa-f]{6}$"
+                  maxLength={7}
+                  disabled={!canManageBranding}
+                  onChange={(event) => updateDraft("primary_color", event.target.value)}
+                />
+              </div>
+            </label>
+            <label>
+              <span>知识问答欢迎标题</span>
+              <input
+                value={draft.welcome_title}
+                minLength={2}
+                maxLength={80}
+                disabled={!canManageBranding}
+                onChange={(event) => updateDraft("welcome_title", event.target.value)}
+              />
+            </label>
+            <label className="branding-message-field">
+              <span>欢迎说明</span>
+              <textarea
+                value={draft.welcome_message}
+                minLength={2}
+                maxLength={240}
+                disabled={!canManageBranding}
+                onChange={(event) => updateDraft("welcome_message", event.target.value)}
+              />
+            </label>
+          </div>
+          {saveError ? <div className="error-banner">{saveError}</div> : null}
+          {!canManageBranding ? (
+            <p className="permission-note">当前角色只能查看品牌配置，修改需要企业所有者或管理员权限。</p>
+          ) : null}
+          <div className="settings-actions">
+            <span>{saved ? "企业品牌已保存并生效。" : "修改仅影响当前企业空间。"}</span>
+            <button
+              className="primary-small"
+              type="button"
+              disabled={
+                !canManageBranding
+                || saving
+                || !draft.display_name.trim()
+                || !/^#[0-9A-Fa-f]{6}$/.test(draft.primary_color)
+                || !draft.welcome_title.trim()
+                || !draft.welcome_message.trim()
+              }
+              onClick={() => void save()}
+            >
+              {saving ? "正在保存…" : "保存企业品牌"}
+            </button>
+          </div>
+        </section>
+
+        <section
+          className="branding-preview"
+          style={{ "--preview-brand": draft.primary_color } as CSSProperties}
+        >
+          <span className="preview-label">实时预览</span>
+          <div className="preview-window">
+            <div className="preview-sidebar">
+              <span className="preview-logo">
+                {draft.logo_url
+                  ? <img src={draft.logo_url} alt="" />
+                  : draft.display_name.slice(0, 1).toUpperCase()}
+              </span>
+              <strong>{draft.display_name || "企业名称"}</strong>
+              <i />
+              <i />
+              <i />
+            </div>
+            <div className="preview-content">
+              <small>企业知识 · 证据问答</small>
+              <h3>{draft.welcome_title || "企业知识空间"}</h3>
+              <p>{draft.welcome_message || "欢迎说明"}</p>
+              <button type="button">提交问题</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
       <section className="panel settings-notice">
         <ShieldCheck size={22} />
         <div>
-          <strong>配置采用只读展示</strong>
+          <strong>底层配置采用只读展示</strong>
           <p>为避免把模型密钥暴露到浏览器，供应商、模型和检索参数由服务器统一管理。下方信息来自后端脱敏接口，不包含任何 API 密钥。</p>
         </div>
       </section>

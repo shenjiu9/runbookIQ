@@ -5,6 +5,7 @@ import type {
   IngestionJob,
   KnowledgeBase,
   OrganizationMember,
+  OrganizationBranding,
   QueryResponse,
   RegistrationInput,
   TenantInvitation,
@@ -60,7 +61,7 @@ async function fetchWithTimeout(
     return await apiFetch(input, { ...init, signal: controller.signal });
   } catch (error) {
     if (controller.signal.aborted) {
-      throw new Error("调查超时：模型响应过慢，请稍后重试。");
+      throw new Error("问答超时：模型响应过慢，请稍后重试。");
     }
     throw error;
   } finally {
@@ -154,6 +155,24 @@ export async function acceptInvitation(
 export async function listOrganizationMembers(): Promise<OrganizationMember[]> {
   return decode<OrganizationMember[]>(
     await apiFetch(`${API_BASE_URL}/api/organization/members`)
+  );
+}
+
+export async function fetchOrganizationBranding(): Promise<OrganizationBranding> {
+  return decode<OrganizationBranding>(
+    await apiFetch(`${API_BASE_URL}/api/organization/branding`)
+  );
+}
+
+export async function updateOrganizationBranding(
+  branding: OrganizationBranding
+): Promise<OrganizationBranding> {
+  return decode<OrganizationBranding>(
+    await apiFetch(`${API_BASE_URL}/api/organization/branding`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(branding)
+    })
   );
 }
 

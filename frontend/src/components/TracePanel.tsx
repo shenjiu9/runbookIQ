@@ -47,7 +47,7 @@ export function TracePanel({ stages }: { stages: TraceStage[] }) {
       ) : (
         <div className="compact-empty">
           <Route size={20} />
-          <span>调查完成后展示每个检索阶段的真实耗时和候选数量。</span>
+          <span>问答完成后展示每个检索阶段的真实耗时和候选数量。</span>
         </div>
       )}
     </section>

@@ -2,6 +2,11 @@ CREATE TABLE IF NOT EXISTS organizations (
     id text PRIMARY KEY,
     name text NOT NULL,
     slug text NOT NULL UNIQUE,
+    display_name text,
+    logo_url text,
+    primary_color text NOT NULL DEFAULT '#0F766E',
+    welcome_title text,
+    welcome_message text,
     created_at timestamptz NOT NULL DEFAULT now()
 );
 

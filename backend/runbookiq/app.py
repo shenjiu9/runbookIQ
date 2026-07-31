@@ -61,13 +61,14 @@ def create_app(
             TrustedHostMiddleware,
             allowed_hosts=allowed_hosts,
         )
+    development_origins = {
+        "http://localhost:5173",
+        "http://localhost:8080",
+        "http://127.0.0.1:4173",
+    }
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",
-            "http://localhost:8080",
-            "http://127.0.0.1:4173",
-        ],
+        allow_origins=[] if production_mode else sorted(development_origins),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -80,7 +81,10 @@ def create_app(
             if origin:
                 origin_host = urlsplit(origin).netloc.lower()
                 request_host = request.headers.get("host", "").lower()
-                if origin_host != request_host:
+                if (
+                    origin_host != request_host
+                    and (production_mode or origin not in development_origins)
+                ):
                     return JSONResponse(
                         status_code=403,
                         content={"detail": "跨站请求已拒绝"},

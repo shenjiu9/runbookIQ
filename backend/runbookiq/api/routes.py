@@ -9,6 +9,7 @@ from runbookiq.api.schemas import (
     InvitationPreviewRequest,
     KnowledgeBaseCreate,
     LoginRequest,
+    OrganizationBrandingUpdate,
     QueryRequest,
     RegistrationRequest,
     RuntimeConfigResponse,
@@ -22,6 +23,7 @@ from runbookiq.domain.models import (
 )
 from runbookiq.domain.tenancy import (
     CreatedTenantInvitation,
+    OrganizationBranding,
     OrganizationMember,
     TenantContext,
     TenantInvitation,
@@ -195,6 +197,31 @@ async def current_user(request: Request) -> TenantContext:
 async def list_organization_members(request: Request) -> list[OrganizationMember]:
     context = await _current_tenant(request)
     return await request.app.state.tenant_access.list_members(context)
+
+
+@router.get(
+    "/organization/branding",
+    response_model=OrganizationBranding,
+)
+async def get_organization_branding(request: Request) -> OrganizationBranding:
+    context = await _current_tenant(request)
+    return await request.app.state.tenant_access.get_branding(context)
+
+
+@router.patch(
+    "/organization/branding",
+    response_model=OrganizationBranding,
+)
+async def update_organization_branding(
+    payload: OrganizationBrandingUpdate,
+    request: Request,
+) -> OrganizationBranding:
+    context = await _current_tenant(request)
+    _require_role(context, "owner", "admin")
+    return await request.app.state.tenant_access.update_branding(
+        context,
+        OrganizationBranding.model_validate(payload.model_dump()),
+    )
 
 
 @router.get(
