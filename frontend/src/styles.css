@@ -22,6 +22,193 @@
   --sidebar-width: 248px;
 }
 
+/* Security and batch-upload refinements */
+.password-input {
+  position: relative;
+}
+
+.password-input input {
+  padding-right: 48px;
+}
+
+.password-visibility {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-muted, #66736f);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.password-visibility:hover,
+.password-visibility:focus-visible {
+  color: var(--brand-primary, #0f847a);
+  background: #edf6f4;
+  outline: none;
+}
+
+.password-strength {
+  display: grid;
+  gap: 7px;
+  margin-top: -3px;
+}
+
+.password-strength > span {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.password-strength i {
+  height: 4px;
+  background: #e0e6e4;
+  border-radius: 99px;
+}
+
+.password-strength small {
+  color: #6a7773;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.password-strength.strength-1 i:first-child,
+.password-strength.strength-2 i:nth-child(-n + 2),
+.password-strength.strength-3 i {
+  background: var(--brand-primary, #0f847a);
+}
+
+.field-error {
+  display: block;
+  margin-top: 6px;
+  color: #b43b3b;
+  font-size: 13px;
+}
+
+.turnstile-field {
+  min-height: 72px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  padding: 12px 0 2px;
+  border-top: 1px solid #e8eceb;
+}
+
+.turnstile-field small,
+.turnstile-field p {
+  margin: 0;
+  color: #6a7773;
+  font-size: 13px;
+}
+
+.turnstile-field p {
+  color: #b43b3b;
+}
+
+.upload-zone.is-dragging {
+  color: var(--brand-primary, #0f847a);
+  background: #edf7f5;
+  border-color: var(--brand-primary, #0f847a);
+  transform: translateY(-1px);
+}
+
+.upload-queue {
+  padding: 0;
+  overflow: hidden;
+}
+
+.upload-queue .panel-heading {
+  padding: 18px 20px;
+  border-bottom: 1px solid #e7ecea;
+}
+
+.upload-queue-list {
+  display: grid;
+}
+
+.upload-queue-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  padding: 11px 20px;
+  border-bottom: 1px solid #edf0ef;
+}
+
+.upload-queue-row:last-child {
+  border-bottom: 0;
+}
+
+.upload-status-icon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #687570;
+  background: #f1f4f3;
+  border-radius: 10px;
+}
+
+.upload-queue-row.is-completed .upload-status-icon {
+  color: #0b776e;
+  background: #e5f5f1;
+}
+
+.upload-queue-row.is-failed .upload-status-icon {
+  color: #a73939;
+  background: #fbeaea;
+}
+
+.upload-queue-row > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.upload-queue-row strong,
+.upload-queue-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-queue-row strong {
+  color: #17231f;
+  font-size: 15px;
+}
+
+.upload-queue-row small,
+.upload-queue-row > span:last-child {
+  color: #6b7773;
+  font-size: 13px;
+}
+
+.upload-queue-row.is-failed small,
+.upload-queue-row.is-failed > span:last-child {
+  color: #a73939;
+}
+
+@media (max-width: 640px) {
+  .upload-queue-row {
+    grid-template-columns: 34px minmax(0, 1fr);
+    padding: 12px 14px;
+  }
+
+  .upload-queue-row > span:last-child {
+    grid-column: 2;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -3781,4 +3968,12 @@ body {
   .auth-intro h1 {
     font-size: 36px;
   }
+}
+
+.auth-input.password-input input {
+  padding-right: 48px;
+}
+
+.auth-input .password-visibility svg {
+  margin: 0;
 }

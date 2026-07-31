@@ -18,6 +18,7 @@ from runbookiq.ingestion.chunker import ParentChildChunker
 from runbookiq.ingestion.manager import InlineIngestionManager
 from runbookiq.ingestion.parser import DocumentParser, TesseractOcrEngine
 from runbookiq.investigation.engine import InvestigationEngine
+from runbookiq.security import CloudflareTurnstileVerifier, PostgresAbuseGuard
 from runbookiq.settings import Settings
 
 
@@ -151,6 +152,15 @@ def build_app():
             "localhost",
             "127.0.0.1",
         ],
+        abuse_guard=PostgresAbuseGuard(database),
+        usage_limits=settings.usage_limits(),
+        turnstile_verifier=CloudflareTurnstileVerifier(
+            secret_key=settings.turnstile_secret_key.get_secret_value(),
+            expected_hostname=settings.root_domain,
+            required=settings.turnstile_required,
+        ),
+        turnstile_site_key=settings.turnstile_site_key,
+        trust_proxy_headers=True,
     )
 
 

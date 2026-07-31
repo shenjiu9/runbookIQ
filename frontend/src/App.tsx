@@ -42,7 +42,8 @@ import type {
   RuntimeConfig,
   TenantInvitation,
   TenantRole,
-  TenantContext
+  TenantContext,
+  UploadQueueItem
 } from "./types";
 
 const defaultQuestion = "根据知识库，遇到这类业务问题时应该按照什么流程处理？";
@@ -65,6 +66,7 @@ export default function App() {
   const [ingestionJob, setIngestionJob] = useState<IngestionJob | null>(null);
   const [ingestionLoading, setIngestionLoading] = useState(false);
   const [ingestionError, setIngestionError] = useState<string | null>(null);
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
   const [evaluationReport, setEvaluationReport] = useState<EvaluationReport | null>(null);
   const [evaluationSuites, setEvaluationSuites] = useState<EvaluationSuite[]>([]);
   const [selectedEvaluationSuiteId, setSelectedEvaluationSuiteId] = useState("");
@@ -196,17 +198,57 @@ export default function App() {
     }
   }
 
-  async function ingest(file: File) {
+  async function ingest(files: File[]) {
     if (!selectedKnowledgeBaseId) return;
+    const maxBatchFiles = runtimeConfig?.max_batch_files ?? 10;
+    const maxDocumentBytes = (runtimeConfig?.max_document_mib ?? 20) * 1024 * 1024;
+    if (files.length > maxBatchFiles) {
+      setIngestionError(`每批最多选择 ${maxBatchFiles} 个文件`);
+      return;
+    }
+    const batchId = Date.now();
+    const entries = files.map((file, index) => ({
+      file,
+      item: {
+        id: `${batchId}-${index}`,
+        filename: file.name,
+        size: file.size,
+        status: file.size > maxDocumentBytes ? "failed" as const : "queued" as const,
+        job: null,
+        error: file.size > maxDocumentBytes
+          ? `文件超过 ${runtimeConfig?.max_document_mib ?? 20} MiB`
+          : null
+      }
+    }));
+    setUploadQueue(entries.map(({ item }) => item));
     setIngestionLoading(true);
     setIngestionError(null);
-    try {
-      setIngestionJob(await uploadDocument(selectedKnowledgeBaseId, file));
-    } catch (error) {
-      setIngestionError(error instanceof Error ? error.message : "文档上传失败");
-    } finally {
-      setIngestionLoading(false);
+    let failed = entries.filter(({ item }) => item.status === "failed").length;
+    for (const { file, item } of entries) {
+      if (item.status === "failed") continue;
+      setUploadQueue((current) => current.map((candidate) => (
+        candidate.id === item.id ? { ...candidate, status: "uploading" } : candidate
+      )));
+      try {
+        const job = await uploadDocument(selectedKnowledgeBaseId, file);
+        setIngestionJob(job);
+        setUploadQueue((current) => current.map((candidate) => (
+          candidate.id === item.id
+            ? { ...candidate, status: "completed", job, error: null }
+            : candidate
+        )));
+      } catch (error) {
+        failed += 1;
+        const message = error instanceof Error ? error.message : "文档上传失败";
+        setUploadQueue((current) => current.map((candidate) => (
+          candidate.id === item.id
+            ? { ...candidate, status: "failed", error: message }
+            : candidate
+        )));
+      }
     }
+    setIngestionError(failed ? `${failed} 个文件未能完成，请查看队列中的原因` : null);
+    setIngestionLoading(false);
   }
 
   async function evaluate() {
@@ -412,7 +454,7 @@ export default function App() {
               onStartAsk={() => setActive("ask")}
             />
           ) : null}
-          {active === "ingestion" ? <IngestionView knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"} job={ingestionJob} loading={ingestionLoading} error={ingestionError} onUpload={ingest} role={tenant.role} /> : null}
+          {active === "ingestion" ? <IngestionView knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"} queue={uploadQueue} loading={ingestionLoading} error={ingestionError} onUpload={ingest} role={tenant.role} maxBatchFiles={runtimeConfig?.max_batch_files ?? 10} maxDocumentMib={runtimeConfig?.max_document_mib ?? 20} /> : null}
           {active === "evaluation" ? (
             <EvaluationView
               knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"}

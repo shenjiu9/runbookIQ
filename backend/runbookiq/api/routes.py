@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
 
@@ -13,6 +14,7 @@ from runbookiq.api.schemas import (
     QueryRequest,
     RegistrationRequest,
     RuntimeConfigResponse,
+    SecurityConfigResponse,
 )
 from runbookiq.domain.models import (
     Answer,
@@ -32,11 +34,26 @@ from runbookiq.domain.tenancy import (
     TenantSession,
 )
 from runbookiq.evaluation.benchmark import get_benchmark, list_benchmarks, load_benchmark
+from runbookiq.security import RateLimitExceeded
 
 router = APIRouter(prefix="/api")
 SESSION_COOKIE = "runbookiq_session"
 CSRF_COOKIE = "runbookiq_csrf"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+ALLOWED_UPLOAD_SUFFIXES = {
+    ".md",
+    ".markdown",
+    ".txt",
+    ".pdf",
+    ".docx",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".bmp",
+    ".tif",
+    ".tiff",
+}
 
 
 @router.get("/health")
@@ -47,6 +64,58 @@ async def health() -> dict[str, str]:
 @router.get("/runtime-config", response_model=RuntimeConfigResponse)
 async def runtime_config(request: Request) -> RuntimeConfigResponse:
     return RuntimeConfigResponse.model_validate(request.app.state.runtime_config)
+
+
+@router.get("/security-config", response_model=SecurityConfigResponse)
+async def security_config(request: Request) -> SecurityConfigResponse:
+    verifier = request.app.state.turnstile_verifier
+    limits = request.app.state.usage_limits
+    enabled = bool(verifier.enabled and request.app.state.turnstile_site_key)
+    return SecurityConfigResponse(
+        turnstile_enabled=enabled,
+        turnstile_required=bool(verifier.required),
+        turnstile_site_key=request.app.state.turnstile_site_key if enabled else None,
+        max_batch_files=limits.max_batch_files,
+        max_document_mib=limits.max_document_mib,
+    )
+
+
+def _client_ip(request: Request) -> str:
+    if request.app.state.trust_proxy_headers:
+        cloudflare_ip = request.headers.get("cf-connecting-ip")
+        if cloudflare_ip:
+            return cloudflare_ip.strip()
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",", 1)[0].strip()
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
+    return request.client.host if request.client else "unknown"
+
+
+async def _enforce_limit(
+    request: Request,
+    *,
+    action: str,
+    scope: str,
+    limit: int,
+    window_seconds: int,
+    detail: str,
+) -> None:
+    try:
+        await request.app.state.abuse_guard.enforce(
+            action=action,
+            scope=scope,
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=detail,
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
 
 
 async def _current_tenant(request: Request) -> TenantContext:
@@ -109,6 +178,30 @@ async def register(
 ) -> TenantContext:
     if not request.app.state.tenant_access.authentication_required:
         raise HTTPException(status_code=409, detail="当前环境未启用注册")
+    limits = request.app.state.usage_limits
+    client_ip = _client_ip(request)
+    await _enforce_limit(
+        request,
+        action="registration-ip",
+        scope=client_ip,
+        limit=limits.registration_per_hour,
+        window_seconds=60 * 60,
+        detail="注册请求过于频繁，请一小时后再试",
+    )
+    if not await request.app.state.turnstile_verifier.verify(
+        token=payload.turnstile_token,
+        remote_ip=client_ip,
+        action="register",
+    ):
+        raise HTTPException(status_code=400, detail="人机验证未通过，请刷新后重试")
+    await _enforce_limit(
+        request,
+        action="registration-global",
+        scope="all",
+        limit=limits.registration_global_per_hour,
+        window_seconds=60 * 60,
+        detail="当前注册人数较多，请稍后再试",
+    )
     try:
         session = await request.app.state.tenant_access.register(
             email=payload.email,
@@ -136,6 +229,24 @@ async def login(
     request: Request,
     response: Response,
 ) -> TenantContext:
+    limits = request.app.state.usage_limits
+    client_ip = _client_ip(request)
+    await _enforce_limit(
+        request,
+        action="login-ip",
+        scope=client_ip,
+        limit=limits.login_ip_per_15_minutes,
+        window_seconds=15 * 60,
+        detail="登录尝试过于频繁，请稍后再试",
+    )
+    await _enforce_limit(
+        request,
+        action="login-account",
+        scope=payload.email.lower(),
+        limit=limits.login_per_15_minutes,
+        window_seconds=15 * 60,
+        detail="此账号登录尝试过多，请 15 分钟后再试",
+    )
     try:
         session = await request.app.state.tenant_access.authenticate(
             email=payload.email,
@@ -162,6 +273,14 @@ async def preview_invitation(
     payload: InvitationPreviewRequest,
     request: Request,
 ) -> TenantInvitationPreview:
+    await _enforce_limit(
+        request,
+        action="invitation-preview",
+        scope=_client_ip(request),
+        limit=request.app.state.usage_limits.invitation_preview_per_15_minutes,
+        window_seconds=15 * 60,
+        detail="邀请链接检查过于频繁，请稍后再试",
+    )
     try:
         return await request.app.state.tenant_access.preview_invitation(payload.token)
     except ValueError as exc:
@@ -174,6 +293,14 @@ async def accept_invitation(
     request: Request,
     response: Response,
 ) -> TenantContext:
+    await _enforce_limit(
+        request,
+        action="invitation-accept",
+        scope=_client_ip(request),
+        limit=10,
+        window_seconds=60 * 60,
+        detail="接受邀请尝试过于频繁，请稍后再试",
+    )
     try:
         session = await request.app.state.tenant_access.accept_invitation(
             token=payload.token,
@@ -245,6 +372,22 @@ async def create_organization_invitation(
 ) -> CreatedTenantInvitation:
     context = await _current_tenant(request)
     _require_role(context, "owner", "admin")
+    limits = request.app.state.usage_limits
+    await _enforce_limit(
+        request,
+        action="organization-invitation",
+        scope=context.organization.id,
+        limit=limits.invitation_per_day,
+        window_seconds=24 * 60 * 60,
+        detail="今日邀请数量已达上限，请明天再试",
+    )
+    members = await request.app.state.tenant_access.list_members(context)
+    invitations = await request.app.state.tenant_access.list_invitations(context)
+    if len(members) + len(invitations) >= limits.max_organization_members:
+        raise HTTPException(
+            status_code=409,
+            detail=f"当前版本每个企业最多 {limits.max_organization_members} 名成员（含待接受邀请）",
+        )
     try:
         return await request.app.state.tenant_access.create_invitation(
             context,
@@ -330,6 +473,14 @@ async def create_knowledge_base(
 ) -> KnowledgeBase:
     context = await _current_tenant(request)
     _require_role(context, "owner", "admin", "editor")
+    allowed_ids = await request.app.state.tenant_access.allowed_knowledge_base_ids(context)
+    current_count = len(allowed_ids or [])
+    max_knowledge_bases = request.app.state.usage_limits.max_knowledge_bases
+    if allowed_ids is not None and current_count >= max_knowledge_bases:
+        raise HTTPException(
+            status_code=409,
+            detail=f"当前版本每个企业最多创建 {max_knowledge_bases} 个知识库",
+        )
     knowledge_base = await request.app.state.knowledge_bases.create(
         name=payload.name,
         description=payload.description,
@@ -385,7 +536,24 @@ async def list_evaluation_suites(
 
 @router.post("/query", response_model=Answer)
 async def query(payload: QueryRequest, request: Request) -> Answer:
-    await _require_knowledge_base(request, payload.knowledge_base_id)
+    context = await _require_knowledge_base(request, payload.knowledge_base_id)
+    limits = request.app.state.usage_limits
+    await _enforce_limit(
+        request,
+        action="query-user-minute",
+        scope=context.user.id,
+        limit=limits.query_per_minute,
+        window_seconds=60,
+        detail="提问速度过快，请稍后再试",
+    )
+    await _enforce_limit(
+        request,
+        action="query-organization-day",
+        scope=context.organization.id,
+        limit=limits.query_per_day,
+        window_seconds=24 * 60 * 60,
+        detail=f"企业今日问答次数已达 {limits.query_per_day} 次上限",
+    )
     try:
         async with asyncio.timeout(request.app.state.query_timeout_seconds):
             return await request.app.state.investigator.ask(
@@ -397,6 +565,49 @@ async def query(payload: QueryRequest, request: Request) -> Answer:
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="模型响应超时，请稍后重试。",
         ) from exc
+
+
+def _safe_upload_filename(original: str | None) -> str:
+    filename = (original or "untitled").replace("\\", "/").rsplit("/", 1)[-1]
+    filename = filename.replace("\x00", "").strip()
+    if not filename:
+        filename = "untitled"
+    return filename[:255]
+
+
+async def _read_upload_limited(file: UploadFile, *, max_bytes: int) -> bytes:
+    content = bytearray()
+    try:
+        while chunk := await file.read(1024 * 1024):
+            content.extend(chunk)
+            if len(content) > max_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"单个文档不得超过 {max_bytes // (1024 * 1024)} MiB",
+                )
+    finally:
+        await file.close()
+    return bytes(content)
+
+
+def _validate_upload_signature(suffix: str, content: bytes) -> None:
+    valid = True
+    if suffix == ".pdf":
+        valid = content.lstrip().startswith(b"%PDF-")
+    elif suffix == ".docx":
+        valid = content.startswith(b"PK")
+    elif suffix == ".png":
+        valid = content.startswith(b"\x89PNG\r\n\x1a\n")
+    elif suffix in {".jpg", ".jpeg"}:
+        valid = content.startswith(b"\xff\xd8\xff")
+    elif suffix == ".webp":
+        valid = len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+    elif suffix == ".bmp":
+        valid = content.startswith(b"BM")
+    elif suffix in {".tif", ".tiff"}:
+        valid = content.startswith((b"II*\x00", b"MM\x00*"))
+    if not valid:
+        raise HTTPException(status_code=422, detail="文件内容与扩展名不匹配")
 
 
 @router.post(
@@ -411,14 +622,37 @@ async def upload_document(
 ) -> IngestionJob:
     context = await _require_knowledge_base(request, knowledge_base_id)
     _require_role(context, "owner", "admin", "editor")
-    content = await file.read()
+    limits = request.app.state.usage_limits
+    await _enforce_limit(
+        request,
+        action="upload-user-hour",
+        scope=context.user.id,
+        limit=limits.upload_per_hour,
+        window_seconds=60 * 60,
+        detail="上传频率过高，请稍后再试",
+    )
+    await _enforce_limit(
+        request,
+        action="upload-organization-day",
+        scope=context.organization.id,
+        limit=limits.upload_per_day,
+        window_seconds=24 * 60 * 60,
+        detail=f"企业今日上传数量已达 {limits.upload_per_day} 份上限",
+    )
+    filename = _safe_upload_filename(file.filename)
+    suffix = Path(filename).suffix.lower()
+    if suffix not in ALLOWED_UPLOAD_SUFFIXES:
+        raise HTTPException(status_code=415, detail="不支持此文件格式")
+    content = await _read_upload_limited(
+        file,
+        max_bytes=limits.max_document_mib * 1024 * 1024,
+    )
     if not content:
-        raise HTTPException(status_code=422, detail="document must not be empty")
-    if len(content) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="document exceeds 20 MiB")
+        raise HTTPException(status_code=422, detail="文档内容不能为空")
+    _validate_upload_signature(suffix, content)
     return await request.app.state.ingestion.submit(
         knowledge_base_id=knowledge_base_id,
-        filename=file.filename or "untitled",
+        filename=filename,
         content_type=file.content_type or "application/octet-stream",
         content=content,
     )
@@ -441,6 +675,15 @@ async def run_evaluation(
 ) -> EvaluationReport:
     context = await _require_knowledge_base(request, payload.knowledge_base_id)
     _require_role(context, "owner", "admin", "editor")
+    limits = request.app.state.usage_limits
+    await _enforce_limit(
+        request,
+        action="evaluation-organization-hour",
+        scope=context.organization.id,
+        limit=limits.evaluation_per_hour,
+        window_seconds=60 * 60,
+        detail=f"企业每小时最多运行 {limits.evaluation_per_hour} 次评测",
+    )
     if payload.suite_id:
         try:
             suite = get_benchmark(payload.suite_id)
