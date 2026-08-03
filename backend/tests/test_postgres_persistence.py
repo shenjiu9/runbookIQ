@@ -82,7 +82,7 @@ async def test_knowledge_and_vectors_survive_application_restart(tmp_path: Path)
                 )
             },
         )
-        assert uploaded.json()["status"] == "completed"
+        assert uploaded.json()["status"] == "completed", uploaded.json()
         document_id = uploaded.json()["document_id"]
     await first_engine.dispose()
 

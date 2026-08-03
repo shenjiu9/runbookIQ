@@ -281,7 +281,15 @@ class InlineIngestionManager:
                     "chunks_created": len(chunks),
                 }
             )
-        except Exception as exc:  # noqa: BLE001 - job boundary records adapter failures
+        except Exception as exc:
+            logger.exception(
+                "document ingestion failed",
+                extra={
+                    "knowledge_base_id": knowledge_base_id,
+                    "document_id": document_id,
+                    "source_filename": filename,
+                },
+            )
             job = job.model_copy(
                 update={
                     "status": "failed",
