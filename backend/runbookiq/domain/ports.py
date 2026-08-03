@@ -1,6 +1,12 @@
 from typing import Protocol
 
-from runbookiq.domain.models import Answer, EvaluationReport, IngestionJob, KnowledgeBase
+from runbookiq.domain.models import (
+    Answer,
+    EvaluationReport,
+    IngestionJob,
+    KnowledgeBase,
+    SourceDocument,
+)
 from runbookiq.domain.tenancy import (
     CreatedTenantInvitation,
     OrganizationMember,
@@ -35,6 +41,34 @@ class IngestionManager(Protocol):
         content_type: str,
         content: bytes,
     ) -> IngestionJob: ...
+
+    async def replace(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+        filename: str,
+        content_type: str,
+        content: bytes,
+    ) -> IngestionJob: ...
+
+    async def list_documents(self, knowledge_base_id: str) -> list[SourceDocument]: ...
+
+    async def cleanup_pending_objects(self) -> None: ...
+
+    async def delete_document(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+    ) -> None: ...
+
+    async def get_document_content(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+    ) -> tuple[SourceDocument, bytes]: ...
 
     async def get_job(self, job_id: str) -> IngestionJob: ...
 

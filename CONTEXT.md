@@ -42,6 +42,9 @@ Tests exercise behavior only through:
 15. `GET /api/organization/members`
 16. `GET/POST /api/organization/invitations`
 17. `DELETE /api/organization/invitations/{invitation_id}`
+18. `GET /api/knowledge-bases/{knowledge_base_id}/documents`
+19. `PUT/DELETE /api/knowledge-bases/{knowledge_base_id}/documents/{document_id}`
+20. `GET /api/knowledge-bases/{knowledge_base_id}/documents/{document_id}/content`
 
 The database, embedding model, reranker, object store, queue, and chat model are external seams
 with production and in-memory adapters.

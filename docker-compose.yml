@@ -97,6 +97,7 @@ services:
       RUNBOOKIQ_MAX_ORGANIZATION_MEMBERS: ${RUNBOOKIQ_MAX_ORGANIZATION_MEMBERS:-25}
       RUNBOOKIQ_MAX_BATCH_FILES: ${RUNBOOKIQ_MAX_BATCH_FILES:-10}
       RUNBOOKIQ_MAX_DOCUMENT_MIB: ${RUNBOOKIQ_MAX_DOCUMENT_MIB:-20}
+      RUNBOOKIQ_DOCUMENT_STORAGE_PATH: /data/documents
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,6 +114,7 @@ services:
     restart: unless-stopped
     volumes:
       - model_cache:/models
+      - document_data:/data/documents
 
   migrate:
     image: postgres:16-alpine
@@ -126,6 +128,7 @@ services:
       - ./infra/postgres/003-organization-invitations.sql:/migrations/003-organization-invitations.sql:ro
       - ./infra/postgres/004-organization-branding.sql:/migrations/004-organization-branding.sql:ro
       - ./infra/postgres/005-security-usage.sql:/migrations/005-security-usage.sql:ro
+      - ./infra/postgres/006-document-lifecycle.sql:/migrations/006-document-lifecycle.sql:ro
     command:
       - /bin/sh
       - -c
@@ -133,7 +136,8 @@ services:
         psql -v ON_ERROR_STOP=1 -f /migrations/002-tenancy.sql &&
         psql -v ON_ERROR_STOP=1 -f /migrations/003-organization-invitations.sql &&
         psql -v ON_ERROR_STOP=1 -f /migrations/004-organization-branding.sql &&
-        psql -v ON_ERROR_STOP=1 -f /migrations/005-security-usage.sql
+        psql -v ON_ERROR_STOP=1 -f /migrations/005-security-usage.sql &&
+        psql -v ON_ERROR_STOP=1 -f /migrations/006-document-lifecycle.sql
     depends_on:
       postgres:
         condition: service_healthy
@@ -173,3 +177,4 @@ volumes:
   model_cache:
   caddy_data:
   caddy_config:
+  document_data:

@@ -18,10 +18,41 @@ jobs:
   test-backend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: runbookiq
+          POSTGRES_USER: runbookiq
+          POSTGRES_PASSWORD: runbookiq
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U runbookiq -d runbookiq"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
+      - name: Initialize PostgreSQL schema and migrations
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker cp infra/postgres/init.sh "${POSTGRES_CONTAINER}:/tmp/init.sh"
+          docker cp infra/postgres/. "${POSTGRES_CONTAINER}:/tmp/migrations/"
+          docker exec -e RUNBOOKIQ_EMBEDDING_DIMENSIONS=768 \
+            "${POSTGRES_CONTAINER}" sh /tmp/init.sh
+          for migration in 002-tenancy.sql 003-organization-invitations.sql \
+            004-organization-branding.sql 005-security-usage.sql \
+            006-document-lifecycle.sql; do
+            docker exec "${POSTGRES_CONTAINER}" \
+              psql -v ON_ERROR_STOP=1 -U runbookiq -d runbookiq \
+              -f "/tmp/migrations/${migration}"
+          done
       - uses: astral-sh/setup-uv@v6
       - working-directory: backend
+        env:
+          RUNBOOKIQ_TEST_DATABASE_URL: postgresql+asyncpg://runbookiq:runbookiq@127.0.0.1:55432/runbookiq
         run: |
           uv sync --frozen
           uv run ruff check .

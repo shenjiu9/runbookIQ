@@ -9,6 +9,7 @@ import type {
   QueryResponse,
   RegistrationInput,
   SecurityConfig,
+  SourceDocument,
   TenantInvitation,
   TenantInvitationPreview,
   TenantRole,
@@ -235,6 +236,49 @@ export async function uploadDocument(
   return decode<IngestionJob>(
     await apiFetch(`${API_BASE_URL}/api/documents`, { method: "POST", body })
   );
+}
+
+export async function listDocuments(
+  knowledgeBaseId: string
+): Promise<SourceDocument[]> {
+  return decode<SourceDocument[]>(
+    await apiFetch(
+      `${API_BASE_URL}/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents`
+    )
+  );
+}
+
+export async function replaceDocument(
+  knowledgeBaseId: string,
+  documentId: string,
+  file: File
+): Promise<IngestionJob> {
+  const body = new FormData();
+  body.append("file", file);
+  return decode<IngestionJob>(
+    await apiFetch(
+      `${API_BASE_URL}/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}`,
+      { method: "PUT", body }
+    )
+  );
+}
+
+export async function deleteDocument(
+  knowledgeBaseId: string,
+  documentId: string
+): Promise<void> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}`,
+    { method: "DELETE" }
+  );
+  if (!response.ok) await decode(response);
+}
+
+export function documentDownloadUrl(
+  knowledgeBaseId: string,
+  documentId: string
+): string {
+  return `${API_BASE_URL}/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}/content`;
 }
 
 export async function listEvaluationSuites(

@@ -5,6 +5,7 @@ import {
   askRunbook,
   createOrganizationInvitation,
   createKnowledgeBase,
+  deleteDocument,
   deleteKnowledgeBase,
   fetchLatestEvaluation,
   fetchCurrentUser,
@@ -12,6 +13,7 @@ import {
   fetchRuntimeConfig,
   fetchSecurityConfig,
   listEvaluationSuites,
+  listDocuments,
   listKnowledgeBases,
   listOrganizationInvitations,
   listOrganizationMembers,
@@ -19,6 +21,7 @@ import {
   previewInvitation,
   QUERY_TIMEOUT_MS,
   register,
+  replaceDocument,
   revokeOrganizationInvitation,
   runEvaluation,
   updateOrganizationBranding
@@ -111,6 +114,67 @@ describe("askRunbook", () => {
       "csrf-browser-token"
     );
     expect(new Headers(fetchMock.mock.calls[2][1].headers).get("X-CSRF-Token")).toBe(
+      "csrf-browser-token"
+    );
+  });
+
+  it("lists, replaces and deletes documents inside the selected knowledge base", async () => {
+    const document = {
+      id: "doc-1",
+      knowledge_base_id: "kb-finance",
+      source_id: "doc-1",
+      filename: "policy.md",
+      content_type: "text/markdown",
+      size_bytes: 1024,
+      checksum: "abc",
+      version: 2,
+      status: "ready" as const,
+      chunks_count: 8,
+      original_available: true,
+      created_at: "2026-08-01T00:00:00Z",
+      updated_at: "2026-08-02T00:00:00Z"
+    };
+    const job = {
+      id: "job-1",
+      knowledge_base_id: "kb-finance",
+      document_id: document.id,
+      filename: document.filename,
+      status: "completed" as const,
+      progress: 100,
+      chunks_created: 8,
+      error: null
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([document]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(job), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", { cookie: "runbookiq_csrf=csrf-browser-token" });
+    const replacement = new File(["# Updated"], "policy.md", {
+      type: "text/markdown"
+    });
+
+    expect(await listDocuments("kb-finance")).toEqual([document]);
+    expect(await replaceDocument("kb-finance", "doc-1", replacement)).toEqual(job);
+    await deleteDocument("kb-finance", "doc-1");
+
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method ?? "GET"])).toEqual([
+      ["http://127.0.0.1:8004/api/knowledge-bases/kb-finance/documents", "GET"],
+      ["http://127.0.0.1:8004/api/knowledge-bases/kb-finance/documents/doc-1", "PUT"],
+      ["http://127.0.0.1:8004/api/knowledge-bases/kb-finance/documents/doc-1", "DELETE"]
+    ]);
+    expect(new Headers(fetchMock.mock.calls[1][1].headers).get("X-CSRF-Token")).toBe(
       "csrf-browser-token"
     );
   });

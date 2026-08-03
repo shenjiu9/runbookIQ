@@ -4,6 +4,7 @@ from runbookiq.adapters.fastembed_provider import FastEmbedClient
 from runbookiq.adapters.generation import ChatAnswerComposer, ChatQueryRewriter
 from runbookiq.adapters.knowledge_bases import PostgresKnowledgeBaseCatalog
 from runbookiq.adapters.local import TokenOverlapReranker
+from runbookiq.adapters.object_storage import FileSystemDocumentStore
 from runbookiq.adapters.ollama import OllamaClient
 from runbookiq.adapters.openai_compatible import (
     OpenAICompatibleChatClient,
@@ -130,6 +131,7 @@ def build_app():
         chunker=ParentChildChunker(),
         embedder=embedder,
         writer=index,
+        object_store=FileSystemDocumentStore(settings.document_storage_path),
     )
     evaluator = EvaluationEngine(
         investigator=investigator,

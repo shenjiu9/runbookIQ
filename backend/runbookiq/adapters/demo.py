@@ -8,6 +8,7 @@ from runbookiq.domain.models import (
     EvaluationReport,
     IngestionJob,
     RetrievalTrace,
+    SourceDocument,
     TraceStage,
 )
 
@@ -80,6 +81,43 @@ class InMemoryIngestion:
 
     async def get_job(self, job_id: str) -> IngestionJob:
         return self._jobs[job_id]
+
+    async def replace(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+        filename: str,
+        content_type: str,
+        content: bytes,
+    ) -> IngestionJob:
+        del knowledge_base_id, filename, content_type, content
+        raise KeyError(document_id)
+
+    async def list_documents(self, knowledge_base_id: str) -> list[SourceDocument]:
+        del knowledge_base_id
+        return []
+
+    async def cleanup_pending_objects(self) -> None:
+        return None
+
+    async def delete_document(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+    ) -> None:
+        del knowledge_base_id
+        raise KeyError(document_id)
+
+    async def get_document_content(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+    ) -> tuple[SourceDocument, bytes]:
+        del knowledge_base_id
+        raise FileNotFoundError(document_id)
 
 
 class DemoEvaluator:
