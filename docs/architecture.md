@@ -12,7 +12,7 @@
 
 ### Ingestion module
 
-Small interface: submit a source, observe its job.
+Small interface: submit, list, replace, download, or delete a source and observe its job.
 
 Implementation hides parsing, heading-aware parent/child chunking, hashing, deduplication,
 embedding batches, persistence, retries, and job progress.
@@ -37,6 +37,7 @@ faithfulness checks, aggregation, and regression comparison.
 Browser -> Nginx -> React
                   -> FastAPI
 FastAPI -> PostgreSQL + pgvector
+        -> durable document object volume
         -> external OpenAI-compatible chat endpoint
         -> external OpenAI-compatible embedding endpoint
         -> ingestion module -> PostgreSQL
@@ -51,3 +52,10 @@ The current single-host edition performs ingestion inline and records job state 
 process. That keeps the deployment small and is honest about the failure boundary. A durable
 queue and worker are the next scaling step when documents become large or ingestion must
 survive API restarts.
+
+PostgreSQL owns each document's logical identity, stable citation source, current version and
+indexed chunks. Original binaries live behind a separate document-store interface. The current
+single-host adapter writes atomically to a Docker volume; an S3-compatible adapter can replace it
+without changing the ingestion or HTTP interfaces. Replacement parses and embeds first, then
+switches metadata and chunks in one PostgreSQL transaction so a failed replacement cannot expose
+a partial version.

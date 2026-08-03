@@ -3,17 +3,20 @@ import {
   askRunbook,
   createOrganizationInvitation,
   createKnowledgeBase,
+  deleteDocument,
   deleteKnowledgeBase,
   fetchCurrentUser,
   fetchHealth,
   fetchLatestEvaluation,
   fetchRuntimeConfig,
   listEvaluationSuites,
+  listDocuments,
   listKnowledgeBases,
   listOrganizationInvitations,
   listOrganizationMembers,
   logout,
   revokeOrganizationInvitation,
+  replaceDocument,
   runEvaluation,
   updateOrganizationBranding,
   uploadDocument
@@ -40,6 +43,7 @@ import type {
   OrganizationBranding,
   QueryResponse,
   RuntimeConfig,
+  SourceDocument,
   TenantInvitation,
   TenantRole,
   TenantContext,
@@ -67,6 +71,10 @@ export default function App() {
   const [ingestionLoading, setIngestionLoading] = useState(false);
   const [ingestionError, setIngestionError] = useState<string | null>(null);
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
+  const [documents, setDocuments] = useState<SourceDocument[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentActionId, setDocumentActionId] = useState<string | null>(null);
+  const [documentRevision, setDocumentRevision] = useState(0);
   const [evaluationReport, setEvaluationReport] = useState<EvaluationReport | null>(null);
   const [evaluationSuites, setEvaluationSuites] = useState<EvaluationSuite[]>([]);
   const [selectedEvaluationSuiteId, setSelectedEvaluationSuiteId] = useState("");
@@ -183,6 +191,34 @@ export default function App() {
     };
   }, [selectedKnowledgeBaseId, tenant]);
 
+  useEffect(() => {
+    if (!tenant || !selectedKnowledgeBaseId) {
+      setDocuments([]);
+      return;
+    }
+    let cancelled = false;
+    setDocuments([]);
+    setDocumentsLoading(true);
+    setIngestionError(null);
+    void listDocuments(selectedKnowledgeBaseId)
+      .then((nextDocuments) => {
+        if (!cancelled) setDocuments(nextDocuments);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setIngestionError(
+            error instanceof Error ? error.message : "文档目录加载失败"
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDocumentsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [documentRevision, selectedKnowledgeBaseId, tenant]);
+
   async function investigate() {
     if (!selectedKnowledgeBaseId) return;
     setQueryLoading(true);
@@ -224,6 +260,7 @@ export default function App() {
     setIngestionLoading(true);
     setIngestionError(null);
     let failed = entries.filter(({ item }) => item.status === "failed").length;
+    let completed = 0;
     for (const { file, item } of entries) {
       if (item.status === "failed") continue;
       setUploadQueue((current) => current.map((candidate) => (
@@ -231,7 +268,11 @@ export default function App() {
       )));
       try {
         const job = await uploadDocument(selectedKnowledgeBaseId, file);
+        if (job.status === "failed") {
+          throw new Error(job.error ?? "文档处理失败");
+        }
         setIngestionJob(job);
+        completed += 1;
         setUploadQueue((current) => current.map((candidate) => (
           candidate.id === item.id
             ? { ...candidate, status: "completed", job, error: null }
@@ -249,6 +290,41 @@ export default function App() {
     }
     setIngestionError(failed ? `${failed} 个文件未能完成，请查看队列中的原因` : null);
     setIngestionLoading(false);
+    if (completed) setDocumentRevision((current) => current + 1);
+  }
+
+  async function replaceExistingDocument(documentId: string, file: File) {
+    if (!selectedKnowledgeBaseId) return;
+    setDocumentActionId(documentId);
+    setIngestionError(null);
+    try {
+      const job = await replaceDocument(selectedKnowledgeBaseId, documentId, file);
+      if (job.status === "failed") {
+        throw new Error(job.error ?? "新版本处理失败，当前版本未发生变化");
+      }
+      setIngestionJob(job);
+      setDocumentRevision((current) => current + 1);
+    } catch (error) {
+      setIngestionError(error instanceof Error ? error.message : "文档替换失败");
+      throw error;
+    } finally {
+      setDocumentActionId(null);
+    }
+  }
+
+  async function removeDocument(documentId: string) {
+    if (!selectedKnowledgeBaseId) return;
+    setDocumentActionId(documentId);
+    setIngestionError(null);
+    try {
+      await deleteDocument(selectedKnowledgeBaseId, documentId);
+      setDocuments((current) => current.filter((item) => item.id !== documentId));
+    } catch (error) {
+      setIngestionError(error instanceof Error ? error.message : "文档删除失败");
+      throw error;
+    } finally {
+      setDocumentActionId(null);
+    }
   }
 
   async function evaluate() {
@@ -271,6 +347,8 @@ export default function App() {
     setResponse(emptyResponse);
     setSelectedCitation(0);
     setQueryError(null);
+    setUploadQueue([]);
+    setIngestionError(null);
   }
 
   async function addKnowledgeBase(name: string, description: string) {
@@ -454,7 +532,24 @@ export default function App() {
               onStartAsk={() => setActive("ask")}
             />
           ) : null}
-          {active === "ingestion" ? <IngestionView knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"} queue={uploadQueue} loading={ingestionLoading} error={ingestionError} onUpload={ingest} role={tenant.role} maxBatchFiles={runtimeConfig?.max_batch_files ?? 10} maxDocumentMib={runtimeConfig?.max_document_mib ?? 20} /> : null}
+          {active === "ingestion" ? (
+            <IngestionView
+              knowledgeBaseId={selectedKnowledgeBaseId}
+              knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"}
+              documents={documents}
+              documentsLoading={documentsLoading}
+              documentActionId={documentActionId}
+              queue={uploadQueue}
+              loading={ingestionLoading}
+              error={ingestionError}
+              onUpload={ingest}
+              onReplace={replaceExistingDocument}
+              onDelete={removeDocument}
+              role={tenant.role}
+              maxBatchFiles={runtimeConfig?.max_batch_files ?? 10}
+              maxDocumentMib={runtimeConfig?.max_document_mib ?? 20}
+            />
+          ) : null}
           {active === "evaluation" ? (
             <EvaluationView
               knowledgeBaseName={selectedKnowledgeBase?.name ?? "未选择知识库"}

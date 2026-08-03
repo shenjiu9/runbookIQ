@@ -1,7 +1,14 @@
+from pathlib import Path
+
 import httpx
 import pytest
 
-from runbookiq.app import create_local_app
+from runbookiq.adapters.local import HashingEmbedder, InMemoryKnowledgeIndex
+from runbookiq.adapters.object_storage import FileSystemDocumentStore
+from runbookiq.app import create_app, create_local_app
+from runbookiq.ingestion.chunker import ParentChildChunker
+from runbookiq.ingestion.manager import InlineIngestionManager
+from runbookiq.ingestion.parser import DocumentParser
 
 
 @pytest.mark.asyncio
@@ -31,6 +38,47 @@ async def test_user_can_create_list_and_delete_an_isolated_knowledge_base() -> N
     assert deleted.status_code == 204
     assert missing.status_code == 404
     assert missing.json()["detail"] == "知识库不存在"
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_knowledge_base_removes_its_index_and_originals(
+    tmp_path: Path,
+) -> None:
+    index = InMemoryKnowledgeIndex()
+    ingestion = InlineIngestionManager(
+        parser=DocumentParser(),
+        chunker=ParentChildChunker(),
+        embedder=HashingEmbedder(),
+        writer=index,
+        object_store=FileSystemDocumentStore(tmp_path),
+    )
+    app = create_app(ingestion=ingestion)
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        knowledge_base = (
+            await client.post(
+                "/api/knowledge-bases",
+                json={"name": "Temporary", "description": "Delete everything"},
+            )
+        ).json()
+        uploaded = await client.post(
+            "/api/documents",
+            data={"knowledge_base_id": knowledge_base["id"]},
+            files={
+                "file": (
+                    "temporary.md",
+                    b"# Temporary\nREMOVE-ALL-919",
+                    "text/markdown",
+                )
+            },
+        )
+        deleted = await client.delete(f"/api/knowledge-bases/{knowledge_base['id']}")
+
+    assert uploaded.json()["status"] == "completed"
+    assert deleted.status_code == 204
+    assert await index.list_documents(knowledge_base["id"]) == []
+    assert [path for path in tmp_path.rglob("*") if path.is_file()] == []
 
 
 @pytest.mark.asyncio

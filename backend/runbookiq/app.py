@@ -14,6 +14,7 @@ from runbookiq.adapters.local import (
     InMemoryKnowledgeIndex,
     TokenOverlapReranker,
 )
+from runbookiq.adapters.object_storage import InMemoryDocumentStore
 from runbookiq.adapters.tenancy import OpenTenantAccess
 from runbookiq.api.routes import router
 from runbookiq.domain.ports import (
@@ -115,7 +116,14 @@ def create_app(
 
     @app.middleware("http")
     async def reject_oversized_uploads(request, call_next):
-        if request.method == "POST" and request.url.path == "/api/documents":
+        is_document_upload = (
+            request.method in {"POST", "PUT"}
+            and (
+                request.url.path == "/api/documents"
+                or "/documents/" in request.url.path
+            )
+        )
+        if is_document_upload:
             content_length = request.headers.get("content-length")
             max_request_bytes = (resolved_limits.max_document_mib + 2) * 1024 * 1024
             if (
@@ -201,6 +209,7 @@ def create_local_app(
         chunker=ParentChildChunker(),
         embedder=embedder,
         writer=index,
+        object_store=InMemoryDocumentStore(),
     )
     return create_app(
         investigator=investigator,

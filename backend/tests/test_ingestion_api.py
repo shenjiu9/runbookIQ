@@ -67,6 +67,7 @@ async def test_uploaded_runbook_becomes_an_observable_ingestion_job() -> None:
     assert submitted.json() == {
         "id": "job-001",
         "knowledge_base_id": "platform",
+        "document_id": None,
         "filename": "runbook.md",
         "status": "queued",
         "progress": 0,
@@ -76,4 +77,3 @@ async def test_uploaded_runbook_becomes_an_observable_ingestion_job() -> None:
     assert observed.status_code == 200
     assert observed.json()["status"] == "completed"
     assert observed.json()["chunks_created"] == 3
-

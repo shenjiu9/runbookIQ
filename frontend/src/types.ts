@@ -62,11 +62,28 @@ export type EvaluationReport = {
 export type IngestionJob = {
   id: string;
   knowledge_base_id: string;
+  document_id?: string;
   filename: string;
   status: "queued" | "processing" | "completed" | "failed";
   progress: number;
   chunks_created: number;
   error: string | null;
+};
+
+export type SourceDocument = {
+  id: string;
+  knowledge_base_id: string;
+  source_id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  checksum: string;
+  version: number;
+  status: "ready";
+  chunks_count: number;
+  original_available: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
 export type UploadQueueItem = {

@@ -3977,3 +3977,234 @@ body {
 .auth-input .password-visibility svg {
   margin: 0;
 }
+
+/* Persistent document catalog */
+.document-catalog {
+  overflow: hidden;
+  margin-top: 20px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.document-catalog-heading {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.document-catalog-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.document-catalog-heading strong {
+  color: var(--ink);
+  font-size: 17px;
+}
+
+.document-catalog-heading span,
+.document-catalog-heading b {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.document-list {
+  display: grid;
+}
+
+.document-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 42px minmax(220px, 1fr) minmax(130px, 0.4fr) minmax(145px, 0.45fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 78px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #edf1ef;
+  transition: background 150ms ease;
+}
+
+.document-row:last-child {
+  border-bottom: 0;
+}
+
+.document-row:hover,
+.document-row.is-confirming {
+  background: #f8faf9;
+}
+
+.document-file-icon {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-dark);
+  border: 1px solid #d9e8e4;
+  border-radius: 9px;
+  background: var(--accent-soft);
+}
+
+.document-identity,
+.document-index-state,
+.document-updated {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.document-identity strong,
+.document-index-state strong,
+.document-updated strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-identity span,
+.document-index-state span,
+.document-updated span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.document-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.document-action {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  color: #46534f;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.document-action:hover:not(:disabled):not(.is-disabled) {
+  color: var(--accent-dark);
+  background: var(--accent-soft);
+}
+
+.document-action.is-danger:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.document-action.is-disabled,
+.document-action:disabled {
+  color: #98a29e;
+  cursor: not-allowed;
+}
+
+.document-delete-confirmation {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 0 2px;
+  border-top: 1px solid #eadedb;
+}
+
+.document-delete-confirmation span {
+  margin-right: auto;
+  color: #7d3732;
+  font-size: 14px;
+}
+
+.document-delete-confirmation button {
+  min-height: 38px;
+  padding: 7px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.document-delete-confirmation .confirm-danger {
+  color: #fff;
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
+.document-empty {
+  min-height: 128px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  color: var(--muted);
+}
+
+.document-empty > div {
+  display: grid;
+  gap: 2px;
+}
+
+.document-empty strong,
+.document-empty span {
+  font-size: 15px;
+}
+
+@media (max-width: 1180px) {
+  .document-row {
+    grid-template-columns: 42px minmax(210px, 1fr) minmax(120px, 0.4fr) auto;
+  }
+
+  .document-updated {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .document-row {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 10px 12px;
+    padding: 15px;
+  }
+
+  .document-index-state {
+    grid-column: 2;
+  }
+
+  .document-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    padding-top: 5px;
+  }
+
+  .document-delete-confirmation {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .document-delete-confirmation span {
+    flex: 1 0 100%;
+  }
+}

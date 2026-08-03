@@ -11,6 +11,7 @@ import {
   CloudUpload,
   Copy,
   Database,
+  Download,
   FileCode2,
   FileText,
   Gauge,
@@ -21,6 +22,7 @@ import {
   ShieldCheck,
   ServerCog,
   Trash2,
+  RefreshCw,
   UserRound,
   Users
 } from "lucide-react";
@@ -33,10 +35,12 @@ import type {
   OrganizationMember,
   OrganizationBranding,
   RuntimeConfig,
+  SourceDocument,
   TenantInvitation,
   TenantRole,
   UploadQueueItem
 } from "../types";
+import { documentDownloadUrl } from "../api";
 
 type KnowledgeProps = {
   knowledgeBases: KnowledgeBase[];
@@ -133,7 +137,11 @@ export function KnowledgeView({
 }
 
 type IngestionProps = {
+  knowledgeBaseId: string;
   knowledgeBaseName: string;
+  documents: SourceDocument[];
+  documentsLoading: boolean;
+  documentActionId: string | null;
   queue: UploadQueueItem[];
   loading: boolean;
   error: string | null;
@@ -141,6 +149,8 @@ type IngestionProps = {
   maxBatchFiles: number;
   maxDocumentMib: number;
   onUpload: (files: File[]) => void;
+  onReplace: (documentId: string, file: File) => Promise<void>;
+  onDelete: (documentId: string) => Promise<void>;
 };
 
 function jobStatusLabel(status: IngestionJob["status"]) {
@@ -154,23 +164,37 @@ function jobStatusLabel(status: IngestionJob["status"]) {
 }
 
 export function IngestionView({
+  knowledgeBaseId,
   knowledgeBaseName,
+  documents,
+  documentsLoading,
+  documentActionId,
   queue,
   loading,
   error,
   onUpload,
+  onReplace,
+  onDelete,
   role,
   maxBatchFiles,
   maxDocumentMib
 }: IngestionProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const replacementInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [replacementTarget, setReplacementTarget] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const disabled = role === "viewer" || loading;
 
   function selectFiles(files: FileList | null) {
     const selected = Array.from(files ?? []);
     if (selected.length) onUpload(selected);
   }
+
+  useEffect(() => {
+    setReplacementTarget(null);
+    setDeleteTarget(null);
+  }, [knowledgeBaseId]);
 
   return (
     <Section title="文档管理" eyebrow={`当前知识库：${knowledgeBaseName}`} description="上传企业资料，系统会完成解析、OCR、分块与索引，并保留章节上下文。">
@@ -206,6 +230,119 @@ export function IngestionView({
         />
       </button>
       {error ? <div className="error-banner">{error}</div> : null}
+      <section className="document-catalog" aria-live="polite">
+        <div className="document-catalog-heading">
+          <div>
+            <strong>已入库文档</strong>
+            <span>每个文件独立管理；替换成功后才会切换检索版本。</span>
+          </div>
+          <b>{documents.length} 个文件</b>
+        </div>
+        <input
+          ref={replacementInputRef}
+          type="file"
+          accept=".md,.markdown,.txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            const documentId = replacementTarget;
+            event.target.value = "";
+            if (!file || !documentId) return;
+            void onReplace(documentId, file)
+              .catch(() => undefined)
+              .finally(() => setReplacementTarget(null));
+          }}
+        />
+        {documentsLoading ? (
+          <div className="document-empty">
+            <LoaderCircle className="spin" size={22} />
+            <span>正在读取文档目录…</span>
+          </div>
+        ) : documents.length ? (
+          <div className="document-list">
+            {documents.map((document) => {
+              const busy = documentActionId === document.id;
+              const confirmingDelete = deleteTarget === document.id;
+              return (
+                <div className={`document-row ${confirmingDelete ? "is-confirming" : ""}`} key={document.id}>
+                  <span className="document-file-icon"><FileText size={20} /></span>
+                  <div className="document-identity">
+                    <strong title={document.filename}>{document.filename}</strong>
+                    <span>{formatDocumentType(document.content_type)} · {formatFileSize(document.size_bytes)}</span>
+                  </div>
+                  <div className="document-index-state">
+                    <strong>版本 {document.version}</strong>
+                    <span>{document.chunks_count} 个检索分块</span>
+                  </div>
+                  <div className="document-updated">
+                    <strong>{formatDocumentDate(document.updated_at)}</strong>
+                    <span>最近更新</span>
+                  </div>
+                  <div className="document-actions">
+                    {document.original_available ? (
+                      <a
+                        className="document-action"
+                        href={documentDownloadUrl(knowledgeBaseId, document.id)}
+                        title="下载当前原文件"
+                      >
+                        <Download size={17} />下载
+                      </a>
+                    ) : (
+                      <span className="document-action is-disabled" title="迁移前文件没有保留原件">
+                        <Download size={17} />无原件
+                      </span>
+                    )}
+                    {role !== "viewer" ? (
+                      <>
+                        <button
+                          className="document-action"
+                          disabled={busy}
+                          onClick={() => {
+                            setReplacementTarget(document.id);
+                            replacementInputRef.current?.click();
+                          }}
+                        >
+                          {busy ? <LoaderCircle className="spin" size={17} /> : <RefreshCw size={17} />}
+                          替换
+                        </button>
+                        <button
+                          className="document-action is-danger"
+                          disabled={busy}
+                          onClick={() => setDeleteTarget(document.id)}
+                        >
+                          <Trash2 size={17} />删除
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                  {confirmingDelete ? (
+                    <div className="document-delete-confirmation">
+                      <span>删除后，该文件的原件、文本分块和向量索引都会移除。确定继续吗？</span>
+                      <button disabled={busy} onClick={() => setDeleteTarget(null)}>取消</button>
+                      <button
+                        className="confirm-danger"
+                        disabled={busy}
+                        onClick={() => {
+                          void onDelete(document.id)
+                            .then(() => setDeleteTarget(null))
+                            .catch(() => undefined);
+                        }}
+                      >
+                        {busy ? "正在删除…" : "确认删除"}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="document-empty">
+            <FileText size={24} />
+            <div><strong>这个知识库还没有文档</strong><span>上传完成后，文件会长期显示在这里。</span></div>
+          </div>
+        )}
+      </section>
       <div className="pipeline-grid">
         {[
           ["解析", "提取标题、章节与页面元数据", FileText],
@@ -260,9 +397,32 @@ function statusLabel(status: UploadQueueItem["status"]) {
 }
 
 function formatFileSize(size: number) {
+  if (size === 0) return "大小未知";
   return size >= 1024 * 1024
     ? `${(size / (1024 * 1024)).toFixed(1)} MiB`
     : `${Math.max(1, Math.round(size / 1024))} KiB`;
+}
+
+function formatDocumentType(contentType: string) {
+  const labels: Record<string, string> = {
+    "text/markdown": "Markdown",
+    "text/plain": "TXT",
+    "application/pdf": "PDF",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX"
+  };
+  return labels[contentType] ?? contentType.split("/").pop()?.toUpperCase() ?? "文件";
+}
+
+function formatDocumentDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "未知时间";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(date);
 }
 
 type EvaluationProps = {

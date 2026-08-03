@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     max_organization_members: int = Field(default=25, ge=1, le=1000)
     max_batch_files: int = Field(default=10, ge=1, le=100)
     max_document_mib: int = Field(default=20, ge=1, le=100)
+    document_storage_path: str = ".data/documents"
 
     @property
     def origins(self) -> list[str]:

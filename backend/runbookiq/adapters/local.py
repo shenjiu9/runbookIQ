@@ -2,7 +2,9 @@ import hashlib
 import math
 import re
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 
+from runbookiq.domain.models import SourceDocument
 from runbookiq.domain.retrieval import DocumentChunk, RankedChunk
 
 
@@ -36,6 +38,15 @@ class InMemoryKnowledgeIndex:
     def __init__(self) -> None:
         self._chunks: dict[str, dict[str, DocumentChunk]] = defaultdict(dict)
         self._embeddings: dict[str, dict[str, list[float]]] = defaultdict(dict)
+        self._documents: dict[str, dict[str, SourceDocument]] = defaultdict(dict)
+        self._checksum_documents: dict[str, dict[str, str]] = defaultdict(dict)
+        self._document_chunks: dict[str, dict[str, set[str]]] = defaultdict(dict)
+        self._pending_object_deletions: dict[str, datetime] = {}
+
+    async def stage_object(self, storage_key: str) -> None:
+        self._pending_object_deletions[storage_key] = datetime.now(UTC) + timedelta(
+            hours=1
+        )
 
     async def upsert_chunks(
         self,
@@ -47,6 +58,111 @@ class InMemoryKnowledgeIndex:
         for chunk, embedding in zip(chunks, embeddings, strict=True):
             self._chunks[knowledge_base_id][chunk.id] = chunk
             self._embeddings[knowledge_base_id][chunk.id] = embedding
+
+    async def replace_document(
+        self,
+        *,
+        document: SourceDocument,
+        chunks: list[DocumentChunk],
+        embeddings: list[list[float]],
+    ) -> str | None:
+        knowledge_base_id = document.knowledge_base_id
+        current = self._documents[knowledge_base_id].get(document.id)
+        if current is None and document.version != 1:
+            raise RuntimeError("document version changed; retry replacement")
+        if current is not None and document.version != current.version + 1:
+            raise RuntimeError("document version changed; retry replacement")
+        mapped_document_id = self._checksum_documents[knowledge_base_id].get(
+            document.checksum
+        )
+        if mapped_document_id not in {None, document.id}:
+            raise RuntimeError("document checksum is already assigned")
+        for chunk_id in self._document_chunks[knowledge_base_id].get(document.id, set()):
+            self._chunks[knowledge_base_id].pop(chunk_id, None)
+            self._embeddings[knowledge_base_id].pop(chunk_id, None)
+        await self.upsert_chunks(
+            knowledge_base_id=knowledge_base_id,
+            chunks=chunks,
+            embeddings=embeddings,
+        )
+        self._documents[knowledge_base_id][document.id] = document.model_copy(deep=True)
+        self._checksum_documents[knowledge_base_id][document.checksum] = document.id
+        self._document_chunks[knowledge_base_id][document.id] = {
+            chunk.id for chunk in chunks
+        }
+        if document.storage_key:
+            self._pending_object_deletions.pop(document.storage_key, None)
+        if current and current.storage_key and current.storage_key != document.storage_key:
+            self._pending_object_deletions[current.storage_key] = datetime.now(UTC)
+        return current.storage_key if current else None
+
+    async def get_document(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+    ) -> SourceDocument:
+        try:
+            return self._documents[knowledge_base_id][document_id].model_copy(deep=True)
+        except KeyError as exc:
+            raise KeyError(document_id) from exc
+
+    async def find_document_by_checksum(
+        self,
+        *,
+        knowledge_base_id: str,
+        checksum: str,
+    ) -> SourceDocument | None:
+        document_id = self._checksum_documents[knowledge_base_id].get(checksum)
+        if document_id is None:
+            return None
+        document = self._documents[knowledge_base_id].get(document_id)
+        return document.model_copy(deep=True) if document else None
+
+    async def list_documents(self, knowledge_base_id: str) -> list[SourceDocument]:
+        return sorted(
+            (
+                document.model_copy(deep=True)
+                for document in self._documents[knowledge_base_id].values()
+            ),
+            key=lambda document: (document.updated_at, document.id),
+            reverse=True,
+        )
+
+    async def delete_document(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+    ) -> SourceDocument:
+        try:
+            document = self._documents[knowledge_base_id].pop(document_id)
+        except KeyError as exc:
+            raise KeyError(document_id) from exc
+        for chunk_id in self._document_chunks[knowledge_base_id].pop(document_id, set()):
+            self._chunks[knowledge_base_id].pop(chunk_id, None)
+            self._embeddings[knowledge_base_id].pop(chunk_id, None)
+        self._checksum_documents[knowledge_base_id] = {
+            checksum: mapped_document_id
+            for checksum, mapped_document_id in self._checksum_documents[
+                knowledge_base_id
+            ].items()
+            if mapped_document_id != document_id
+        }
+        if document.storage_key:
+            self._pending_object_deletions[document.storage_key] = datetime.now(UTC)
+        return document
+
+    async def list_pending_object_deletions(self) -> list[str]:
+        now = datetime.now(UTC)
+        return sorted(
+            storage_key
+            for storage_key, delete_after in self._pending_object_deletions.items()
+            if delete_after <= now
+        )
+
+    async def confirm_object_deletion(self, storage_key: str) -> None:
+        self._pending_object_deletions.pop(storage_key, None)
 
     async def lexical_search(
         self,

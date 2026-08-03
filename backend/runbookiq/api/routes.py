@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
 
@@ -22,6 +23,7 @@ from runbookiq.domain.models import (
     EvaluationSuite,
     IngestionJob,
     KnowledgeBase,
+    SourceDocument,
 )
 from runbookiq.domain.tenancy import (
     CreatedTenantInvitation,
@@ -509,12 +511,24 @@ async def list_knowledge_bases(request: Request) -> list[KnowledgeBase]:
 async def delete_knowledge_base(knowledge_base_id: str, request: Request) -> Response:
     context = await _require_knowledge_base(request, knowledge_base_id)
     _require_role(context, "owner", "admin")
+    documents = await request.app.state.ingestion.list_documents(knowledge_base_id)
     try:
         await request.app.state.knowledge_bases.delete(knowledge_base_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="知识库不存在") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    for document in documents:
+        try:
+            await request.app.state.ingestion.delete_document(
+                knowledge_base_id=knowledge_base_id,
+                document_id=document.id,
+            )
+        except KeyError:
+            # PostgreSQL cascades document rows with the knowledge base. Its
+            # deletion trigger has already queued the original for cleanup.
+            continue
+    await request.app.state.ingestion.cleanup_pending_objects()
     await request.app.state.tenant_access.revoke_knowledge_base(
         context,
         knowledge_base_id,
@@ -610,18 +624,10 @@ def _validate_upload_signature(suffix: str, content: bytes) -> None:
         raise HTTPException(status_code=422, detail="文件内容与扩展名不匹配")
 
 
-@router.post(
-    "/documents",
-    response_model=IngestionJob,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def upload_document(
+async def _enforce_document_upload_limits(
     request: Request,
-    knowledge_base_id: str = Form(...),
-    file: UploadFile = File(...),  # noqa: B008 - FastAPI dependency declaration
-) -> IngestionJob:
-    context = await _require_knowledge_base(request, knowledge_base_id)
-    _require_role(context, "owner", "admin", "editor")
+    context: TenantContext,
+) -> None:
     limits = request.app.state.usage_limits
     await _enforce_limit(
         request,
@@ -639,22 +645,133 @@ async def upload_document(
         window_seconds=24 * 60 * 60,
         detail=f"企业今日上传数量已达 {limits.upload_per_day} 份上限",
     )
+
+
+async def _validated_document_upload(
+    request: Request,
+    file: UploadFile,
+) -> tuple[str, str, bytes]:
     filename = _safe_upload_filename(file.filename)
     suffix = Path(filename).suffix.lower()
     if suffix not in ALLOWED_UPLOAD_SUFFIXES:
+        await file.close()
         raise HTTPException(status_code=415, detail="不支持此文件格式")
     content = await _read_upload_limited(
         file,
-        max_bytes=limits.max_document_mib * 1024 * 1024,
+        max_bytes=request.app.state.usage_limits.max_document_mib * 1024 * 1024,
     )
     if not content:
         raise HTTPException(status_code=422, detail="文档内容不能为空")
     _validate_upload_signature(suffix, content)
+    return filename, file.content_type or "application/octet-stream", content
+
+
+@router.post(
+    "/documents",
+    response_model=IngestionJob,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def upload_document(
+    request: Request,
+    knowledge_base_id: str = Form(...),
+    file: UploadFile = File(...),  # noqa: B008 - FastAPI dependency declaration
+) -> IngestionJob:
+    context = await _require_knowledge_base(request, knowledge_base_id)
+    _require_role(context, "owner", "admin", "editor")
+    await _enforce_document_upload_limits(request, context)
+    filename, content_type, content = await _validated_document_upload(request, file)
     return await request.app.state.ingestion.submit(
         knowledge_base_id=knowledge_base_id,
         filename=filename,
-        content_type=file.content_type or "application/octet-stream",
+        content_type=content_type,
         content=content,
+    )
+
+
+@router.get(
+    "/knowledge-bases/{knowledge_base_id}/documents",
+    response_model=list[SourceDocument],
+)
+async def list_documents(
+    knowledge_base_id: str,
+    request: Request,
+) -> list[SourceDocument]:
+    await _require_knowledge_base(request, knowledge_base_id)
+    return await request.app.state.ingestion.list_documents(knowledge_base_id)
+
+
+@router.put(
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}",
+    response_model=IngestionJob,
+)
+async def replace_document(
+    knowledge_base_id: str,
+    document_id: str,
+    request: Request,
+    file: UploadFile = File(...),  # noqa: B008 - FastAPI dependency declaration
+) -> IngestionJob:
+    context = await _require_knowledge_base(request, knowledge_base_id)
+    _require_role(context, "owner", "admin", "editor")
+    await _enforce_document_upload_limits(request, context)
+    filename, content_type, content = await _validated_document_upload(request, file)
+    try:
+        return await request.app.state.ingestion.replace(
+            knowledge_base_id=knowledge_base_id,
+            document_id=document_id,
+            filename=filename,
+            content_type=content_type,
+            content=content,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="文档不存在") from exc
+
+
+@router.delete(
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_document(
+    knowledge_base_id: str,
+    document_id: str,
+    request: Request,
+) -> Response:
+    context = await _require_knowledge_base(request, knowledge_base_id)
+    _require_role(context, "owner", "admin", "editor")
+    try:
+        await request.app.state.ingestion.delete_document(
+            knowledge_base_id=knowledge_base_id,
+            document_id=document_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="文档不存在") from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/content",
+)
+async def download_document(
+    knowledge_base_id: str,
+    document_id: str,
+    request: Request,
+) -> Response:
+    await _require_knowledge_base(request, knowledge_base_id)
+    try:
+        document, content = await request.app.state.ingestion.get_document_content(
+            knowledge_base_id=knowledge_base_id,
+            document_id=document_id,
+        )
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="文档原件不存在") from exc
+    return Response(
+        content=content,
+        media_type=document.content_type,
+        headers={
+            "Content-Disposition": (
+                "attachment; filename*=UTF-8''" + quote(document.filename)
+            ),
+            "Cache-Control": "private, no-store",
+        },
     )
 
 

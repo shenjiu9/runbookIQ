@@ -41,11 +41,29 @@ class KnowledgeBase(BaseModel):
 class IngestionJob(BaseModel):
     id: str
     knowledge_base_id: str
+    document_id: str | None = None
     filename: str
     status: Literal["queued", "processing", "completed", "failed"]
     progress: int = Field(ge=0, le=100)
     chunks_created: int = 0
     error: str | None = None
+
+
+class SourceDocument(BaseModel):
+    id: str
+    knowledge_base_id: str
+    source_id: str
+    filename: str
+    content_type: str
+    size_bytes: int = Field(ge=0)
+    checksum: str
+    version: int = Field(ge=1)
+    status: Literal["ready"] = "ready"
+    chunks_count: int = Field(ge=0)
+    original_available: bool = False
+    created_at: str
+    updated_at: str
+    storage_key: str | None = Field(default=None, exclude=True)
 
 
 class EvaluationSuite(BaseModel):
