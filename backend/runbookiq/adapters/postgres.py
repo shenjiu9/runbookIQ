@@ -355,6 +355,7 @@ class PostgresKnowledgeIndex:
                    1 - (embedding <=> CAST(:embedding AS vector)) AS score
             FROM knowledge_chunks
             WHERE knowledge_base_id = :knowledge_base_id
+              AND 1 - (embedding <=> CAST(:embedding AS vector)) > 0
             ORDER BY embedding <=> CAST(:embedding AS vector), id
             LIMIT :limit
             """
