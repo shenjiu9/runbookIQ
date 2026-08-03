@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -121,8 +122,8 @@ class PostgresKnowledgeIndex:
             "storage_key": document.storage_key,
             "version": document.version,
             "chunks_count": document.chunks_count,
-            "created_at": document.created_at,
-            "updated_at": document.updated_at,
+            "created_at": datetime.fromisoformat(document.created_at),
+            "updated_at": datetime.fromisoformat(document.updated_at),
         }
         chunk_rows = [
             {
