@@ -43,6 +43,10 @@ SESSION_COOKIE = "runbookiq_session"
 CSRF_COOKIE = "runbookiq_csrf"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 ALLOWED_UPLOAD_SUFFIXES = {
+    ".csv",
+    ".json",
+    ".jsonl",
+    ".ndjson",
     ".md",
     ".markdown",
     ".txt",

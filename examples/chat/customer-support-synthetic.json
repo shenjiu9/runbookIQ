@@ -1,0 +1,112 @@
+{
+  "conversations": [
+    {
+      "id": "refund-983",
+      "title": "退款到账时效确认",
+      "messages": [
+        {"timestamp": "2026-07-10 09:12", "sender": "客户", "content": "订单取消后退款一直没有到账。"},
+        {"timestamp": "2026-07-10 09:14", "sender": "客服小韩", "content": "工单 REFUND-983 的最终结论：退款将在 2 个工作日内原路退回。"},
+        {"timestamp": "2026-07-10 09:15", "sender": "客户", "content": "好的，我会留意原支付账户。"}
+      ]
+    },
+    {
+      "id": "cold-271",
+      "title": "冷链温度异常处置",
+      "messages": [
+        {"timestamp": "2026-07-11 07:30", "sender": "门店值班员", "content": "冷藏柜温度持续升高，需要确认是否还能销售。"},
+        {"timestamp": "2026-07-11 07:33", "sender": "食品安全主管", "content": "事件 COLD-271 的处置结论：温度超过 8°C 并持续 30 分钟时，立即隔离商品并暂停销售。"},
+        {"timestamp": "2026-07-11 07:35", "sender": "门店值班员", "content": "已建立隔离清单并联系维修。"}
+      ]
+    },
+    {
+      "id": "invoice-442",
+      "title": "增值税发票补开",
+      "messages": [
+        {"timestamp": "2026-07-12 11:20", "sender": "企业客户", "content": "需要为上月订单补开增值税发票。"},
+        {"timestamp": "2026-07-12 11:24", "sender": "财务客服", "content": "申请 INVOICE-442 的确认结果：补开电子增值税专用发票，接收邮箱为 finance@xinggang.example。"},
+        {"timestamp": "2026-07-12 11:25", "sender": "企业客户", "content": "邮箱和发票类型确认无误。"}
+      ]
+    },
+    {
+      "id": "delivery-615",
+      "title": "同城配送延迟补偿",
+      "messages": [
+        {"timestamp": "2026-07-13 16:02", "sender": "调度员", "content": "暴雨导致多笔同城订单配送延迟。"},
+        {"timestamp": "2026-07-13 16:06", "sender": "区域经理", "content": "方案 DELIVERY-615：延迟超过 45 分钟的订单需要主动通知客户，并发放 20 元补偿券。"},
+        {"timestamp": "2026-07-13 16:08", "sender": "调度员", "content": "已按延迟时长筛选受影响订单。"}
+      ]
+    },
+    {
+      "id": "member-307",
+      "title": "会员权益暂停申请",
+      "messages": [
+        {"timestamp": "2026-07-14 13:40", "sender": "会员", "content": "近期出国，希望暂停会员权益。"},
+        {"timestamp": "2026-07-14 13:42", "sender": "会员客服", "content": "申请 MEMBER-307 已批准：会员权益冻结 90 天，冻结期间不扣减有效期。"},
+        {"timestamp": "2026-07-14 13:43", "sender": "会员", "content": "确认从明天开始冻结。"}
+      ]
+    },
+    {
+      "id": "security-884",
+      "title": "员工手机遗失处置",
+      "messages": [
+        {"timestamp": "2026-07-15 18:10", "sender": "员工", "content": "工作手机遗失，设备上仍登录着企业应用。"},
+        {"timestamp": "2026-07-15 18:12", "sender": "安全值班员", "content": "事件 SECURITY-884：必须在 10 分钟内撤销全部登录令牌，并远程锁定设备。"},
+        {"timestamp": "2026-07-15 18:14", "sender": "员工", "content": "令牌撤销和远程锁定均已完成。"}
+      ]
+    },
+    {
+      "id": "buy-529",
+      "title": "门店紧急采购审批",
+      "messages": [
+        {"timestamp": "2026-07-16 10:05", "sender": "店长", "content": "冷柜维修需要紧急采购备件。"},
+        {"timestamp": "2026-07-16 10:09", "sender": "采购主管", "content": "流程 BUY-529：采购金额超过 3000 元时，必须由区域经理和财务负责人双人审批。"},
+        {"timestamp": "2026-07-16 10:11", "sender": "店长", "content": "已同时提交给两位审批人。"}
+      ]
+    },
+    {
+      "id": "return-763",
+      "title": "商品退货条件确认",
+      "messages": [
+        {"timestamp": "2026-07-17 14:30", "sender": "客户", "content": "未拆封商品是否可以无理由退货？"},
+        {"timestamp": "2026-07-17 14:32", "sender": "售后客服", "content": "规则 RETURN-763：未拆封标准商品支持 7 天无理由退货，但个性化定制商品除外。"},
+        {"timestamp": "2026-07-17 14:33", "sender": "客户", "content": "商品没有定制，我会提交退货申请。"}
+      ]
+    },
+    {
+      "id": "sla-246",
+      "title": "生产故障响应时限",
+      "messages": [
+        {"timestamp": "2026-07-18 20:01", "sender": "业务负责人", "content": "支付主链路完全不可用，应该按什么级别响应？"},
+        {"timestamp": "2026-07-18 20:03", "sender": "平台值班员", "content": "事件 SLA-246 定级为 P1，值班人员必须在 5 分钟内响应并建立事故群。"},
+        {"timestamp": "2026-07-18 20:04", "sender": "业务负责人", "content": "事故群已经建立。"}
+      ]
+    },
+    {
+      "id": "stock-918",
+      "title": "库存差异复核",
+      "messages": [
+        {"timestamp": "2026-07-19 08:50", "sender": "盘点员", "content": "系统库存与货架数量不一致。"},
+        {"timestamp": "2026-07-19 08:53", "sender": "仓储主管", "content": "任务 STOCK-918：单品差异超过 3 件时必须由第二名员工重新盘点并拍照留档。"},
+        {"timestamp": "2026-07-19 08:55", "sender": "盘点员", "content": "已安排另一名员工复核。"}
+      ]
+    },
+    {
+      "id": "contract-331",
+      "title": "供应商合同归档",
+      "messages": [
+        {"timestamp": "2026-07-20 15:20", "sender": "采购专员", "content": "已终止供应商合同需要保存多久？"},
+        {"timestamp": "2026-07-20 15:23", "sender": "法务专员", "content": "归档 CONTRACT-331：合同终止后，正本和审批记录至少保存 5 年。"},
+        {"timestamp": "2026-07-20 15:25", "sender": "采购专员", "content": "会同时归档纸质正本和电子审批记录。"}
+      ]
+    },
+    {
+      "id": "hr-672",
+      "title": "新员工系统权限开通",
+      "messages": [
+        {"timestamp": "2026-07-21 09:00", "sender": "部门经理", "content": "新员工已经入职，何时能拿到系统权限？"},
+        {"timestamp": "2026-07-21 09:04", "sender": "IT 服务台", "content": "请求 HR-672：直属经理批准后，应在 1 个工作日内开通基础权限。"},
+        {"timestamp": "2026-07-21 09:05", "sender": "部门经理", "content": "审批已经完成。"}
+      ]
+    }
+  ]
+}

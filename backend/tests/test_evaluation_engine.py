@@ -87,3 +87,48 @@ async def test_latest_evaluation_is_isolated_by_knowledge_base() -> None:
 
     assert await evaluator.latest("missing-retail-kb") is None
     assert (await evaluator.latest("platform")) is not None
+
+
+@pytest.mark.asyncio
+async def test_evaluation_measures_section_and_evidence_accuracy_when_annotated() -> None:
+    evaluator = EvaluationEngine(
+        investigator=TwoQuestionInvestigator(),
+        faithfulness_judge=HeuristicFaithfulnessJudge(),
+    )
+    app = create_app(evaluator=evaluator)
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/evaluations/run",
+            json={
+                "knowledge_base_id": "platform",
+                "cases": [
+                    {
+                        "question": "logs",
+                        "expected_source_ids": ["expected-source"],
+                        "expected_section_paths": ["Expected"],
+                        "expected_evidence_terms": ["operational evidence"],
+                        "expected_answer_terms": ["Grounded answer"],
+                    },
+                    {
+                        "question": "config",
+                        "expected_source_ids": ["expected-source"],
+                        "expected_section_paths": ["Missing conversation"],
+                        "expected_evidence_terms": ["missing decision"],
+                        "expected_answer_terms": ["missing decision"],
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["metrics"]["section_recall_at_5"] == 0.5
+    assert response.json()["metrics"]["evidence_term_recall_at_5"] == 0.5
+    assert response.json()["metrics"]["answer_term_coverage"] == 0.5
+    assert response.json()["cases"][0]["retrieved_section_paths"] == [
+        "Expected",
+        "Other",
+    ]
+    assert response.json()["cases"][0]["metrics"]["section_recall_at_5"] == 1.0
+    assert response.json()["cases"][1]["metrics"]["section_recall_at_5"] == 0.0

@@ -115,7 +115,14 @@ async def test_evaluation_suites_are_scoped_to_their_knowledge_base() -> None:
             "name": "平台故障调查基准 v1",
             "description": "Kubernetes、配置发布与探针事故的中英文黄金问题",
             "case_count": 60,
-        }
+        },
+        {
+            "id": "chat-support-v1",
+            "knowledge_base_id": "platform",
+            "name": "中文客服聊天记录基准 v1",
+            "description": "12 个模拟客服会话的精确编号与自然语言检索黄金问题",
+            "case_count": 24,
+        },
     ]
     assert retail_suites.status_code == 200
     assert retail_suites.json() == []

@@ -12,6 +12,8 @@ from docx.text.paragraph import Paragraph
 from PIL import Image
 from pypdf import PdfReader
 
+from runbookiq.ingestion.chat import ChatTranscriptParser
+
 
 @dataclass(frozen=True)
 class ParsedSection:
@@ -72,9 +74,49 @@ class DocumentParser:
 
     def __init__(self, *, ocr_engine: OcrEngine | None = None) -> None:
         self._ocr_engine = ocr_engine
+        self._chat_parser = ChatTranscriptParser()
 
     def parse(self, *, filename: str, content_type: str, content: bytes) -> list[ParsedSection]:
         suffix = Path(filename).suffix.lower()
+        if suffix in {".jsonl", ".ndjson"} or content_type in {
+            "application/x-ndjson",
+            "application/jsonlines",
+        }:
+            return [
+                ParsedSection(
+                    title=section.title,
+                    section_path=section.section_path,
+                    text=section.text,
+                )
+                for section in self._chat_parser.parse_json_lines(
+                    filename=filename,
+                    content=content,
+                )
+            ]
+        if suffix == ".csv" or content_type == "text/csv":
+            return [
+                ParsedSection(
+                    title=section.title,
+                    section_path=section.section_path,
+                    text=section.text,
+                )
+                for section in self._chat_parser.parse_csv(
+                    filename=filename,
+                    content=content,
+                )
+            ]
+        if suffix == ".json" or content_type == "application/json":
+            return [
+                ParsedSection(
+                    title=section.title,
+                    section_path=section.section_path,
+                    text=section.text,
+                )
+                for section in self._chat_parser.parse_json(
+                    filename=filename,
+                    content=content,
+                )
+            ]
         if suffix == ".docx" or content_type == (
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ):

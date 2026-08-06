@@ -8,6 +8,7 @@
 - 企业注册登录、专属子域名，以及企业和知识库双重隔离；
 - 多知识库目录与严格的来源、分块、向量、查询隔离；
 - 标题感知的 Markdown/PDF/DOCX 解析、图片与扫描 PDF OCR、parent-child chunking；
+- JSON、JSONL、CSV 聊天记录导入，保留会话、时间、发言人和重叠消息窗口；
 - BM25/全文检索与 pgvector 语义检索并行执行；
 - Reciprocal Rank Fusion 去重融合，再由真实 LLM reranker 重排；
 - 只基于检索证据生成回答，返回 source、section、excerpt 和各阶段分数；
@@ -246,6 +247,9 @@ curl -F "knowledge_base_id=platform" \
   -F "file=@examples/runbooks/crashloopbackoff.md;type=text/markdown" \
   http://localhost:8080/api/documents
 ```
+
+聊天记录支持通用 JSON、JSONL/NDJSON 和 CSV 导出；字段、示例与聊天专用评测指标见
+[聊天记录导入与评测](docs/chat-transcript-import.md)。
 
 查询：
 

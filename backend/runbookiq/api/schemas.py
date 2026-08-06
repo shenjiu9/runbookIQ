@@ -117,6 +117,9 @@ class QueryRequest(BaseModel):
 class EvaluationCaseRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     expected_source_ids: list[str] = Field(min_length=1)
+    expected_section_paths: list[str] | None = Field(default=None, min_length=1, max_length=20)
+    expected_evidence_terms: list[str] | None = Field(default=None, min_length=1, max_length=50)
+    expected_answer_terms: list[str] | None = Field(default=None, min_length=1, max_length=50)
     reference_answer: str | None = None
 
 

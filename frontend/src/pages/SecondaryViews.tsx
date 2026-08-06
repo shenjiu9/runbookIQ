@@ -216,12 +216,12 @@ export function IngestionView({
       >
         {loading ? <LoaderCircle className="spin" size={32} /> : <CloudUpload size={32} />}
         <strong>{loading ? "正在按顺序处理文件…" : role === "viewer" ? "只读账号不可上传文档" : "拖放文件到这里，或点击批量选择"}</strong>
-        <span>每批最多 {maxBatchFiles} 个 · 单个最大 {maxDocumentMib} MiB · 支持 Markdown、TXT、PDF、DOCX 和图片 OCR</span>
+        <span>每批最多 {maxBatchFiles} 个 · 单个最大 {maxDocumentMib} MiB · 支持文档、图片 OCR，以及 JSON、JSONL、CSV 聊天记录</span>
         <input
           ref={inputRef}
           type="file"
           multiple
-          accept=".md,.markdown,.txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff"
+          accept=".md,.markdown,.txt,.pdf,.docx,.json,.jsonl,.ndjson,.csv,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff"
           hidden
           onChange={(event) => {
             selectFiles(event.target.files);
@@ -241,7 +241,7 @@ export function IngestionView({
         <input
           ref={replacementInputRef}
           type="file"
-          accept=".md,.markdown,.txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff"
+          accept=".md,.markdown,.txt,.pdf,.docx,.json,.jsonl,.ndjson,.csv,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff"
           hidden
           onChange={(event) => {
             const file = event.target.files?.[0];
@@ -407,6 +407,9 @@ function formatDocumentType(contentType: string) {
   const labels: Record<string, string> = {
     "text/markdown": "Markdown",
     "text/plain": "TXT",
+    "text/csv": "聊天记录 CSV",
+    "application/json": "聊天记录 JSON",
+    "application/x-ndjson": "聊天记录 JSONL",
     "application/pdf": "PDF",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX"
   };
@@ -957,7 +960,10 @@ function metricLabel(key: string) {
     recall_at_5: "召回率 Recall@5",
     mrr_at_5: "平均倒数排名 MRR@5",
     precision_at_5: "检索准确率 Precision@5",
-    faithfulness: "答案忠实度"
+    faithfulness: "答案忠实度",
+    section_recall_at_5: "会话/章节召回率",
+    evidence_term_recall_at_5: "证据关键事实覆盖率",
+    answer_term_coverage: "答案关键事实覆盖率"
   };
   return labels[key] ?? key.replaceAll("_", " ");
 }

@@ -92,5 +92,7 @@ class EvaluationCaseResult(BaseModel):
     question: str
     expected_source_ids: list[str]
     retrieved_source_ids: list[str]
+    expected_section_paths: list[str] = Field(default_factory=list)
+    retrieved_section_paths: list[str] = Field(default_factory=list)
     first_relevant_rank: int | None
     metrics: dict[str, float]

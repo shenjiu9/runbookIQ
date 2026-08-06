@@ -5,7 +5,10 @@ const labels: Record<string, string> = {
   recall_at_5: "召回率 Recall@5",
   mrr_at_5: "平均倒数排名 MRR@5",
   precision_at_5: "检索准确率 Precision@5",
-  faithfulness: "答案忠实度"
+  faithfulness: "答案忠实度",
+  section_recall_at_5: "会话/章节召回率",
+  evidence_term_recall_at_5: "证据关键事实覆盖率",
+  answer_term_coverage: "答案关键事实覆盖率"
 };
 
 export function EvaluationSummary({

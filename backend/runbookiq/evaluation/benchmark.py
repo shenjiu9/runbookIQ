@@ -3,22 +3,34 @@ from dataclasses import dataclass
 from runbookiq.domain.models import EvaluationSuite
 
 PLATFORM_OPERATIONS_SUITE_ID = "platform-operations-v1"
+CHAT_SUPPORT_SUITE_ID = "chat-support-v1"
 
 CRASHLOOP_SOURCE = "src-d0ddef69082afff0"
 CONFIG_SOURCE = "src-fc5c92d441c484ab"
 PROBE_SOURCE = "src-ecc35d05aefe91f2"
+CHAT_SUPPORT_SOURCE = "src-7c09d5e4171ce16c"
 
 
 @dataclass(frozen=True)
 class GoldenCase:
     question: str
     expected_source_ids: tuple[str, ...]
+    expected_section_paths: tuple[str, ...] = ()
+    expected_evidence_terms: tuple[str, ...] = ()
+    expected_answer_terms: tuple[str, ...] = ()
 
     def as_dict(self) -> dict:
-        return {
+        payload = {
             "question": self.question,
             "expected_source_ids": list(self.expected_source_ids),
         }
+        if self.expected_section_paths:
+            payload["expected_section_paths"] = list(self.expected_section_paths)
+        if self.expected_evidence_terms:
+            payload["expected_evidence_terms"] = list(self.expected_evidence_terms)
+        if self.expected_answer_terms:
+            payload["expected_answer_terms"] = list(self.expected_answer_terms)
+        return payload
 
 
 def _cases(questions: tuple[str, ...], *source_ids: str) -> list[GoldenCase]:
@@ -107,6 +119,113 @@ PLATFORM_OPERATIONS_CASES = [
 ]
 
 
+def _chat_cases(
+    conversation_id: str,
+    exact_question: str,
+    semantic_question: str,
+    evidence_term: str,
+    answer_term: str,
+) -> list[GoldenCase]:
+    return [
+        GoldenCase(
+            question=question,
+            expected_source_ids=(CHAT_SUPPORT_SOURCE,),
+            expected_section_paths=(f"会话 {conversation_id}",),
+            expected_evidence_terms=(evidence_term,),
+            expected_answer_terms=(answer_term,),
+        )
+        for question in (exact_question, semantic_question)
+    ]
+
+
+CHAT_SUPPORT_CASES = [
+    *_chat_cases(
+        "refund-983",
+        "工单 REFUND-983 的退款将在多久内到账？",
+        "订单取消后，退款需要几天以及退到哪里？",
+        "退款将在 2 个工作日内原路退回",
+        "2 个工作日",
+    ),
+    *_chat_cases(
+        "cold-271",
+        "事件 COLD-271 在什么条件下必须隔离商品？",
+        "冷藏柜温度超过多少并持续多久需要停止销售？",
+        "温度超过 8°C 并持续 30 分钟",
+        "8°C",
+    ),
+    *_chat_cases(
+        "invoice-442",
+        "INVOICE-442 要补开什么发票并发送到哪个邮箱？",
+        "企业客户补开发票时确认的发票类型和接收邮箱是什么？",
+        "补开电子增值税专用发票",
+        "finance@xinggang.example",
+    ),
+    *_chat_cases(
+        "delivery-615",
+        "DELIVERY-615 对超过 45 分钟的配送提供什么补偿？",
+        "同城订单严重延迟后应该通知谁以及发多少元补偿券？",
+        "发放 20 元补偿券",
+        "20 元",
+    ),
+    *_chat_cases(
+        "member-307",
+        "MEMBER-307 批准冻结会员权益多久？",
+        "会员出国期间可以暂停权益多少天，是否扣减有效期？",
+        "会员权益冻结 90 天",
+        "90 天",
+    ),
+    *_chat_cases(
+        "security-884",
+        "SECURITY-884 要求多久内撤销登录令牌？",
+        "工作手机遗失后，多长时间内必须处理账号并对设备做什么？",
+        "在 10 分钟内撤销全部登录令牌",
+        "10 分钟",
+    ),
+    *_chat_cases(
+        "buy-529",
+        "BUY-529 中采购金额超过多少需要双人审批？",
+        "门店紧急采购达到什么金额后需要哪些人共同审批？",
+        "采购金额超过 3000 元",
+        "3000 元",
+    ),
+    *_chat_cases(
+        "return-763",
+        "RETURN-763 允许未拆封商品几天内无理由退货？",
+        "未拆封商品的退货期限是什么，哪类商品除外？",
+        "支持 7 天无理由退货",
+        "7 天",
+    ),
+    *_chat_cases(
+        "sla-246",
+        "SLA-246 定级为什么，响应时限是多少？",
+        "支付主链路完全不可用时值班人员应在多久内响应？",
+        "定级为 P1",
+        "5 分钟",
+    ),
+    *_chat_cases(
+        "stock-918",
+        "STOCK-918 规定库存差异超过几件需要复盘？",
+        "系统库存和货架数量差多少时需要第二个人重新盘点？",
+        "单品差异超过 3 件",
+        "3 件",
+    ),
+    *_chat_cases(
+        "contract-331",
+        "CONTRACT-331 要求合同终止后保存多久？",
+        "供应商合同结束后正本和审批记录至少要归档几年？",
+        "至少保存 5 年",
+        "5 年",
+    ),
+    *_chat_cases(
+        "hr-672",
+        "HR-672 要求多久开通新员工基础权限？",
+        "经理批准后，新员工需要等待多长时间才能获得系统权限？",
+        "在 1 个工作日内开通基础权限",
+        "1 个工作日",
+    ),
+]
+
+
 PLATFORM_OPERATIONS_SUITE = EvaluationSuite(
     id=PLATFORM_OPERATIONS_SUITE_ID,
     knowledge_base_id="platform",
@@ -115,11 +234,23 @@ PLATFORM_OPERATIONS_SUITE = EvaluationSuite(
     case_count=len(PLATFORM_OPERATIONS_CASES),
 )
 
+CHAT_SUPPORT_SUITE = EvaluationSuite(
+    id=CHAT_SUPPORT_SUITE_ID,
+    knowledge_base_id="platform",
+    name="中文客服聊天记录基准 v1",
+    description="12 个模拟客服会话的精确编号与自然语言检索黄金问题",
+    case_count=len(CHAT_SUPPORT_CASES),
+)
+
 SUITES = {
     PLATFORM_OPERATIONS_SUITE_ID: (
         PLATFORM_OPERATIONS_SUITE,
         PLATFORM_OPERATIONS_CASES,
-    )
+    ),
+    CHAT_SUPPORT_SUITE_ID: (
+        CHAT_SUPPORT_SUITE,
+        CHAT_SUPPORT_CASES,
+    ),
 }
 
 
@@ -148,7 +279,11 @@ def load_benchmark(
         _suite, suite_cases = SUITES[suite_id]
     except KeyError as exc:
         raise KeyError(suite_id) from exc
-    if max_cases and max_cases < len(suite_cases):
+    if (
+        suite_id == PLATFORM_OPERATIONS_SUITE_ID
+        and max_cases
+        and max_cases < len(suite_cases)
+    ):
         groups = [
             suite_cases[0:20],
             suite_cases[20:40],
@@ -160,6 +295,8 @@ def load_benchmark(
             for group in groups
             if index < len(group)
         ][:max_cases]
+    elif max_cases:
+        selected = suite_cases[:max_cases]
     else:
         selected = suite_cases
     return [case.as_dict() for case in selected], len(suite_cases)
