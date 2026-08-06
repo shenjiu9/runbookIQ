@@ -25,7 +25,7 @@ describe("AuthView invitation acceptance", () => {
     window.history.replaceState({}, "", "/#invite=mobile-invite-token");
   });
 
-  it("lets an invited user accept even while registration security config is unavailable", async () => {
+  it("lets an invited user accept an invitation with an eight-character-or-longer password", async () => {
     vi.mocked(previewInvitation).mockResolvedValue({
       email: "member@example.com",
       role: "viewer",
@@ -57,15 +57,15 @@ describe("AuthView invitation acceptance", () => {
     render(<AuthView onAuthenticated={authenticated} />);
 
     await screen.findByText("member@example.com");
-    await user.type(screen.getByLabelText("密码"), "Mobile-password-2026");
-    await user.type(screen.getByLabelText("确认密码"), "Mobile-password-2026");
+    await user.type(screen.getByLabelText("密码"), "Invite9!x");
+    await user.type(screen.getByLabelText("确认密码"), "Invite9!x");
     const submit = screen.getByRole("button", { name: "接受邀请并进入" });
 
     expect((submit as HTMLButtonElement).disabled).toBe(false);
     await user.click(submit);
     await waitFor(() => expect(acceptInvitation).toHaveBeenCalledWith(
       "mobile-invite-token",
-      "Mobile-password-2026"
+      "Invite9!x"
     ));
     expect(authenticated).toHaveBeenCalledOnce();
   });

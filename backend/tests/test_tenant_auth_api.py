@@ -114,7 +114,7 @@ async def test_owner_can_invite_a_colleague_into_the_same_enterprise() -> None:
             "/api/auth/invitations/accept",
             json={
                 "token": invitation["token"],
-                "password": "Invited-password-2026",
+                "password": "Invite9!x",
             },
         )
         invited.headers["X-CSRF-Token"] = invited.cookies["runbookiq_csrf"]

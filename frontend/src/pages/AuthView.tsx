@@ -32,6 +32,9 @@ const fallbackSecurityConfig: SecurityConfig = {
   max_document_mib: 20
 };
 
+const REGISTRATION_MIN_PASSWORD_LENGTH = 12;
+const INVITATION_MIN_PASSWORD_LENGTH = 8;
+
 export function AuthView({ onAuthenticated }: Props) {
   const [invitationToken] = useState(() => (
     typeof window === "undefined"
@@ -72,8 +75,11 @@ export function AuthView({ onAuthenticated }: Props) {
   }, []);
 
   const isNewPassword = Boolean(invitationToken) || mode === "register";
+  const newPasswordMinLength = invitationToken
+    ? INVITATION_MIN_PASSWORD_LENGTH
+    : REGISTRATION_MIN_PASSWORD_LENGTH;
   const passwordsMatch = !isNewPassword || password === confirmPassword;
-  const strength = passwordStrength(password);
+  const strength = passwordStrength(password, newPasswordMinLength);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -244,12 +250,16 @@ export function AuthView({ onAuthenticated }: Props) {
               <input
                 required
                 type={showPassword ? "text" : "password"}
-                minLength={isNewPassword ? 12 : 1}
+                minLength={isNewPassword ? newPasswordMinLength : 1}
                 maxLength={200}
                 autoComplete={isNewPassword ? "new-password" : "current-password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder={isNewPassword ? "设置至少 12 位密码" : "输入密码"}
+                placeholder={
+                  isNewPassword
+                    ? `设置至少 ${newPasswordMinLength} 位密码`
+                    : "输入密码"
+                }
               />
               <button
                 className="password-visibility"
@@ -276,7 +286,7 @@ export function AuthView({ onAuthenticated }: Props) {
                   <input
                     required
                     type={showConfirmPassword ? "text" : "password"}
-                    minLength={12}
+                    minLength={newPasswordMinLength}
                     maxLength={200}
                     autoComplete="new-password"
                     value={confirmPassword}
@@ -325,7 +335,10 @@ export function AuthView({ onAuthenticated }: Props) {
               || invitationLoading
               || (!invitationToken && mode === "register" && !securityConfig)
               || (Boolean(invitationToken) && !invitation)
-              || (isNewPassword && (!passwordsMatch || password.length < 12))
+              || (
+                isNewPassword
+                && (!passwordsMatch || password.length < newPasswordMinLength)
+              )
               || (
                 !invitationToken
                 && mode === "register"
@@ -348,10 +361,13 @@ export function AuthView({ onAuthenticated }: Props) {
   );
 }
 
-function passwordStrength(password: string) {
-  if (!password) return { level: 0, label: "至少 12 位" };
-  let score = password.length >= 12 ? 1 : 0;
-  if (password.length >= 16) score += 1;
+function passwordStrength(password: string, minLength: number) {
+  if (!password) return { level: 0, label: `至少 ${minLength} 位` };
+  if (password.length < minLength) {
+    return { level: 0, label: "长度不足" };
+  }
+  let score = 1;
+  if (password.length >= minLength + 4) score += 1;
   if (/[a-zA-Z]/.test(password) && /\d/.test(password) && /[^a-zA-Z\d]/.test(password)) {
     score += 1;
   }
