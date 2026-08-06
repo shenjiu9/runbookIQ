@@ -1,9 +1,10 @@
 import asyncio
 import hashlib
 import logging
+from collections.abc import Coroutine
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import uuid4
 
 from runbookiq.domain.models import IngestionJob, SourceDocument
@@ -114,15 +115,20 @@ class InlineIngestionManager:
         embedder: ChunkEmbedder,
         writer: KnowledgeWriter,
         object_store: DocumentStore,
+        run_in_background: bool = False,
     ) -> None:
         self._parser = parser
         self._chunker = chunker
         self._embedder = embedder
         self._writer = writer
         self._object_store = object_store
+        self._run_in_background = run_in_background
         self._jobs: dict[str, IngestionJob] = {}
         self._submit_locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._document_locks: dict[tuple[str, str], asyncio.Lock] = {}
+        self._pending_submissions: dict[tuple[str, str], str] = {}
+        self._pending_replacements: dict[tuple[str, str], str] = {}
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
     async def submit(
         self,
@@ -143,6 +149,11 @@ class InlineIngestionManager:
             asyncio.Lock(),
         )
         async with lock:
+            pending_job_id = self._pending_submissions.get(
+                (knowledge_base_id, checksum)
+            )
+            if pending_job_id is not None:
+                return self._jobs[pending_job_id]
             duplicate = await self._writer.find_document_by_checksum(
                 knowledge_base_id=knowledge_base_id,
                 checksum=checksum,
@@ -150,17 +161,36 @@ class InlineIngestionManager:
             if duplicate is not None:
                 return self._completed_job(document=duplicate, filename=filename)
             document_id = f"doc-{uuid4().hex}"
-            return await self._ingest(
+            job = self._new_job(
                 knowledge_base_id=knowledge_base_id,
                 document_id=document_id,
-                source_id=f"src-{checksum[:16]}",
-                version=1,
-                created_at=datetime.now(UTC).isoformat(),
                 filename=filename,
-                content_type=content_type,
-                content=content,
-                checksum=checksum,
             )
+            ingest_arguments = {
+                "job": job,
+                "knowledge_base_id": knowledge_base_id,
+                "document_id": document_id,
+                "source_id": f"src-{checksum[:16]}",
+                "version": 1,
+                "created_at": datetime.now(UTC).isoformat(),
+                "filename": filename,
+                "content_type": content_type,
+                "content": content,
+                "checksum": checksum,
+            }
+            if self._run_in_background:
+                pending_key = (knowledge_base_id, checksum)
+                self._pending_submissions[pending_key] = job.id
+                self._schedule(
+                    self._run_background_ingest(
+                        lock=lock,
+                        pending=self._pending_submissions,
+                        pending_key=pending_key,
+                        ingest_arguments=ingest_arguments,
+                    )
+                )
+                return job
+            return await self._ingest(**ingest_arguments)
 
     async def replace(
         self,
@@ -176,6 +206,11 @@ class InlineIngestionManager:
             asyncio.Lock(),
         )
         async with lock:
+            pending_job_id = self._pending_replacements.get(
+                (knowledge_base_id, document_id)
+            )
+            if pending_job_id is not None:
+                return self._jobs[pending_job_id]
             current = await self._writer.get_document(
                 knowledge_base_id=knowledge_base_id,
                 document_id=document_id,
@@ -188,21 +223,79 @@ class InlineIngestionManager:
             checksum = hashlib.sha256(identity_bytes).hexdigest()
             if checksum == current.checksum:
                 return self._completed_job(document=current, filename=filename)
-            return await self._ingest(
+            job = self._new_job(
                 knowledge_base_id=knowledge_base_id,
                 document_id=document_id,
-                source_id=current.source_id,
-                version=current.version + 1,
-                created_at=current.created_at,
                 filename=filename,
-                content_type=content_type,
-                content=content,
-                checksum=checksum,
             )
+            ingest_arguments = {
+                "job": job,
+                "knowledge_base_id": knowledge_base_id,
+                "document_id": document_id,
+                "source_id": current.source_id,
+                "version": current.version + 1,
+                "created_at": current.created_at,
+                "filename": filename,
+                "content_type": content_type,
+                "content": content,
+                "checksum": checksum,
+            }
+            if self._run_in_background:
+                pending_key = (knowledge_base_id, document_id)
+                self._pending_replacements[pending_key] = job.id
+                self._schedule(
+                    self._run_background_ingest(
+                        lock=lock,
+                        pending=self._pending_replacements,
+                        pending_key=pending_key,
+                        ingest_arguments=ingest_arguments,
+                    )
+                )
+                return job
+            return await self._ingest(**ingest_arguments)
+
+    def _new_job(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+        filename: str,
+    ) -> IngestionJob:
+        job = IngestionJob(
+            id=f"job-{uuid4().hex[:12]}",
+            knowledge_base_id=knowledge_base_id,
+            document_id=document_id,
+            filename=filename,
+            status="queued",
+            progress=0,
+        )
+        self._jobs[job.id] = job
+        return job
+
+    def _schedule(self, coroutine: Coroutine[Any, Any, None]) -> None:
+        task = asyncio.create_task(coroutine)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _run_background_ingest(
+        self,
+        *,
+        lock: asyncio.Lock,
+        pending: dict[tuple[str, str], str],
+        pending_key: tuple[str, str],
+        ingest_arguments: dict[str, Any],
+    ) -> None:
+        try:
+            async with lock:
+                await self._ingest(**ingest_arguments)
+        finally:
+            if pending.get(pending_key) == ingest_arguments["job"].id:
+                pending.pop(pending_key, None)
 
     async def _ingest(
         self,
         *,
+        job: IngestionJob,
         knowledge_base_id: str,
         document_id: str,
         source_id: str,
@@ -213,16 +306,8 @@ class InlineIngestionManager:
         content: bytes,
         checksum: str,
     ) -> IngestionJob:
-        job_id = f"job-{uuid4().hex[:12]}"
-        job = IngestionJob(
-            id=job_id,
-            knowledge_base_id=knowledge_base_id,
-            document_id=document_id,
-            filename=filename,
-            status="processing",
-            progress=10,
-        )
-        self._jobs[job_id] = job
+        job = job.model_copy(update={"status": "processing", "progress": 10})
+        self._jobs[job.id] = job
         try:
             sections = self._parser.parse(
                 filename=filename,
@@ -236,12 +321,16 @@ class InlineIngestionManager:
             )
             if not chunks:
                 raise ValueError("document does not contain indexable text")
+            job = job.model_copy(update={"progress": 30})
+            self._jobs[job.id] = job
             embeddings = await self._embedder.embed_documents(
                 [chunk.text for chunk in chunks]
             )
+            job = job.model_copy(update={"progress": 70})
+            self._jobs[job.id] = job
             suffix = Path(filename).suffix.lower()
             storage_key = (
-                f"{knowledge_base_id}/{document_id}/v{version}-{job_id}/original{suffix}"
+                f"{knowledge_base_id}/{document_id}/v{version}-{job.id}/original{suffix}"
             )
             await self._writer.stage_object(storage_key)
             try:
@@ -249,6 +338,8 @@ class InlineIngestionManager:
             except Exception:
                 await self._cleanup_object(storage_key)
                 raise
+            job = job.model_copy(update={"progress": 85})
+            self._jobs[job.id] = job
             updated_at = datetime.now(UTC).isoformat()
             document = SourceDocument(
                 id=document_id,
@@ -296,10 +387,10 @@ class InlineIngestionManager:
                 update={
                     "status": "failed",
                     "progress": 100,
-                    "error": str(exc),
+                    "error": str(exc) or type(exc).__name__,
                 }
             )
-        self._jobs[job_id] = job
+        self._jobs[job.id] = job
         return job
 
     def _completed_job(

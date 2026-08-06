@@ -24,13 +24,64 @@ import {
   replaceDocument,
   revokeOrganizationInvitation,
   runEvaluation,
-  updateOrganizationBranding
+  updateOrganizationBranding,
+  waitForIngestionJob
 } from "./api";
 
 describe("askRunbook", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("polls a background ingestion job until it completes", async () => {
+    const queuedJob = {
+      id: "job-chat-1",
+      knowledge_base_id: "kb-chat",
+      document_id: "doc-chat-1",
+      filename: "chat.csv",
+      status: "queued" as const,
+      progress: 0,
+      chunks_created: 0,
+      error: null
+    };
+    const processingJob = { ...queuedJob, status: "processing" as const, progress: 30 };
+    const completedJob = {
+      ...queuedJob,
+      status: "completed" as const,
+      progress: 100,
+      chunks_created: 500
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(processingJob), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(completedJob), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const updates: string[] = [];
+
+    const result = await waitForIngestionJob(
+      queuedJob,
+      (job) => updates.push(job.status),
+      0,
+      1000
+    );
+
+    expect(result).toEqual(completedJob);
+    expect(updates).toEqual(["queued", "processing", "completed"]);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:8004/api/ingestion/jobs/job-chat-1",
+      "http://127.0.0.1:8004/api/ingestion/jobs/job-chat-1"
+    ]);
   });
 
   it("aborts a query that exceeds the browser deadline", async () => {

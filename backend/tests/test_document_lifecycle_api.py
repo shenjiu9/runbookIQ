@@ -282,6 +282,63 @@ async def test_reuploading_an_older_checksum_keeps_the_current_logical_document(
     assert downloaded.content == current
 
 
+@pytest.mark.asyncio
+async def test_background_ingestion_returns_a_job_before_embedding_finishes() -> None:
+    class BlockingEmbedder(HashingEmbedder):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+            self.started.set()
+            await self.release.wait()
+            return await super().embed_documents(texts)
+
+    embedder = BlockingEmbedder()
+    index = InMemoryKnowledgeIndex()
+    app = create_app(
+        ingestion=InlineIngestionManager(
+            parser=DocumentParser(),
+            chunker=ParentChildChunker(),
+            embedder=embedder,
+            writer=index,
+            object_store=InMemoryDocumentStore(),
+            run_in_background=True,
+        )
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        uploaded = await asyncio.wait_for(
+            _upload(
+                client,
+                filename="large-chat.csv",
+                content=(
+                    b"conversation_id,timestamp,sender,message\n"
+                    b"chat-1,2026-08-06 09:00,user,hello\n"
+                ),
+                content_type="text/csv",
+            ),
+            timeout=0.5,
+        )
+        assert uploaded.status_code == 202
+        assert uploaded.json()["status"] in {"queued", "processing"}
+        await asyncio.wait_for(embedder.started.wait(), timeout=0.5)
+
+        embedder.release.set()
+        for _ in range(20):
+            observed = await client.get(
+                f"/api/ingestion/jobs/{uploaded.json()['id']}"
+            )
+            if observed.json()["status"] == "completed":
+                break
+            await asyncio.sleep(0.01)
+
+    assert observed.json()["status"] == "completed"
+    assert observed.json()["chunks_created"] == 1
+
+
 async def _register_owner(
     client: httpx.AsyncClient,
     *,

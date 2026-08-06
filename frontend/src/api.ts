@@ -238,6 +238,34 @@ export async function uploadDocument(
   );
 }
 
+export async function getIngestionJob(jobId: string): Promise<IngestionJob> {
+  return decode<IngestionJob>(
+    await apiFetch(
+      `${API_BASE_URL}/api/ingestion/jobs/${encodeURIComponent(jobId)}`
+    )
+  );
+}
+
+export async function waitForIngestionJob(
+  initialJob: IngestionJob,
+  onUpdate?: (job: IngestionJob) => void,
+  pollIntervalMs = 1500,
+  timeoutMs = 30 * 60 * 1000
+): Promise<IngestionJob> {
+  let job = initialJob;
+  const deadline = Date.now() + timeoutMs;
+  onUpdate?.(job);
+  while (job.status === "queued" || job.status === "processing") {
+    if (Date.now() >= deadline) {
+      throw new Error("文档处理时间过长，请稍后刷新页面查看结果");
+    }
+    await new Promise((resolve) => globalThis.setTimeout(resolve, pollIntervalMs));
+    job = await getIngestionJob(job.id);
+    onUpdate?.(job);
+  }
+  return job;
+}
+
 export async function listDocuments(
   knowledgeBaseId: string
 ): Promise<SourceDocument[]> {

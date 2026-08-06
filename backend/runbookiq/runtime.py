@@ -82,6 +82,7 @@ def build_app():
         embedder = FastEmbedClient(
             model_name=settings.embedding_model,
             dimensions=settings.embedding_dimensions,
+            batch_size=settings.fastembed_batch_size,
             cache_dir=settings.fastembed_cache_dir,
         )
     elif settings.embedding_provider == "ollama":
@@ -132,6 +133,7 @@ def build_app():
         embedder=embedder,
         writer=index,
         object_store=FileSystemDocumentStore(settings.document_storage_path),
+        run_in_background=True,
     )
     evaluator = EvaluationEngine(
         investigator=investigator,

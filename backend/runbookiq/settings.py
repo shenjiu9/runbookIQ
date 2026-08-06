@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     ocr_timeout_seconds: int = 30
     embedding_dimensions: int = 768
     fastembed_cache_dir: str = ".cache/fastembed"
+    fastembed_batch_size: int = Field(default=32, ge=1, le=256)
     allowed_origins: str = "http://localhost:5173,http://localhost:8080"
     root_domain: str = "rag.xn--bang-fe6gk6c.top"
     secure_cookies: bool = True

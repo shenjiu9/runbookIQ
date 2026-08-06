@@ -9,6 +9,7 @@ import {
   fetchHealth,
   fetchLatestEvaluation,
   fetchRuntimeConfig,
+  waitForIngestionJob,
   listEvaluationSuites,
   listDocuments,
   listKnowledgeBases,
@@ -267,7 +268,15 @@ export default function App() {
         candidate.id === item.id ? { ...candidate, status: "uploading" } : candidate
       )));
       try {
-        const job = await uploadDocument(selectedKnowledgeBaseId, file);
+        const submittedJob = await uploadDocument(selectedKnowledgeBaseId, file);
+        const job = await waitForIngestionJob(submittedJob, (currentJob) => {
+          setIngestionJob(currentJob);
+          setUploadQueue((current) => current.map((candidate) => (
+            candidate.id === item.id
+              ? { ...candidate, status: "uploading", job: currentJob, error: null }
+              : candidate
+          )));
+        });
         if (job.status === "failed") {
           throw new Error(job.error ?? "文档处理失败");
         }
@@ -298,7 +307,12 @@ export default function App() {
     setDocumentActionId(documentId);
     setIngestionError(null);
     try {
-      const job = await replaceDocument(selectedKnowledgeBaseId, documentId, file);
+      const submittedJob = await replaceDocument(
+        selectedKnowledgeBaseId,
+        documentId,
+        file
+      );
+      const job = await waitForIngestionJob(submittedJob, setIngestionJob);
       if (job.status === "failed") {
         throw new Error(job.error ?? "新版本处理失败，当前版本未发生变化");
       }

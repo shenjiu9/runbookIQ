@@ -15,13 +15,18 @@ class FastEmbedClient:
         *,
         model_name: str,
         dimensions: int,
+        batch_size: int = 32,
         cache_dir: str | None = None,
         model: EmbeddingModel | None = None,
     ) -> None:
+        if batch_size < 1:
+            raise ValueError("batch_size must be at least 1")
         self._model_name = model_name
         self._dimensions = dimensions
+        self._batch_size = batch_size
         self._cache_dir = cache_dir
         self._model = model
+        self._embed_lock = asyncio.Lock()
 
     def _get_model(self) -> EmbeddingModel:
         if self._model is None:
@@ -46,13 +51,20 @@ class FastEmbedClient:
         return await self._embed([f"search_document: {text}" for text in texts])
 
     async def _embed(self, texts: list[str]) -> list[list[float]]:
-        def generate() -> list[list[float]]:
+        def generate(batch_texts: list[str]) -> list[list[float]]:
             return [
                 [float(value) for value in vector]
-                for vector in self._get_model().embed(texts)
+                for vector in self._get_model().embed(batch_texts)
             ]
 
-        vectors = await asyncio.to_thread(generate)
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), self._batch_size):
+            batch = texts[start : start + self._batch_size]
+            # FastEmbed keeps one ONNX session in process. Serializing each small
+            # batch prevents concurrent uploads/queries from multiplying its peak
+            # memory usage on small production hosts.
+            async with self._embed_lock:
+                vectors.extend(await asyncio.to_thread(generate, batch))
         if len(vectors) != len(texts):
             raise ValueError("embedding model returned an unexpected result count")
         if any(len(vector) != self._dimensions for vector in vectors):
