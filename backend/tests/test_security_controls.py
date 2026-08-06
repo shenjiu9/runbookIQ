@@ -3,7 +3,12 @@ import pytest
 
 from runbookiq.adapters.tenancy import InMemoryTenantAccess
 from runbookiq.app import create_local_app
-from runbookiq.security import InMemoryAbuseGuard, RateLimitExceeded, UsageLimits
+from runbookiq.security import (
+    CloudflareTurnstileVerifier,
+    InMemoryAbuseGuard,
+    RateLimitExceeded,
+    UsageLimits,
+)
 
 
 class RecordingTurnstileVerifier:
@@ -87,6 +92,31 @@ async def test_registration_requires_server_verified_turnstile_when_enabled() ->
     assert rejected.status_code == 400
     assert accepted.status_code == 201
     assert verifier.tokens == [None, "valid-turnstile-token"]
+
+
+@pytest.mark.asyncio
+async def test_optional_turnstile_keeps_registration_available_without_a_token() -> None:
+    app = create_local_app(
+        tenant_access=tenant_access(),
+        turnstile_verifier=CloudflareTurnstileVerifier(
+            secret_key="configured-secret",
+            expected_hostname="knowledge.test",
+            required=False,
+        ),
+        turnstile_site_key="configured-site-key",
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://knowledge.test",
+    ) as client:
+        config = await client.get("/api/security-config")
+        accepted = await register(client, email="mobile@example.com")
+
+    assert config.json()["turnstile_enabled"] is True
+    assert config.json()["turnstile_required"] is False
+    assert accepted.status_code == 201
 
 
 @pytest.mark.asyncio

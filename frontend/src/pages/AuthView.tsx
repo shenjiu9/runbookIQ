@@ -306,6 +306,7 @@ export function AuthView({ onAuthenticated }: Props) {
               key={`${securityConfig.turnstile_site_key}-${turnstileAttempt}`}
               siteKey={securityConfig.turnstile_site_key}
               action="register"
+              required={securityConfig.turnstile_required}
               onTokenChange={setTurnstileToken}
             />
           ) : null}
@@ -322,13 +323,13 @@ export function AuthView({ onAuthenticated }: Props) {
             disabled={
               submitting
               || invitationLoading
-              || !securityConfig
+              || (!invitationToken && mode === "register" && !securityConfig)
               || (Boolean(invitationToken) && !invitation)
               || (isNewPassword && (!passwordsMatch || password.length < 12))
               || (
                 !invitationToken
                 && mode === "register"
-                && securityConfig.turnstile_required
+                && securityConfig?.turnstile_required
                 && !turnstileToken
               )
             }

@@ -8,12 +8,21 @@ type TurnstileApi = {
       action: string;
       theme: "light";
       language: string;
+      size: "flexible";
+      retry: "auto";
+      "retry-interval": number;
+      "refresh-expired": "auto";
+      "refresh-timeout": "auto";
+      "response-field": false;
       callback: (token: string) => void;
       "expired-callback": () => void;
-      "error-callback": () => void;
+      "error-callback": (errorCode: string) => void;
+      "timeout-callback": () => void;
+      "unsupported-callback": () => void;
     }
   ) => string;
   remove: (widgetId: string) => void;
+  reset: (widgetId: string) => void;
 };
 
 declare global {
@@ -45,11 +54,12 @@ function loadTurnstile(): Promise<TurnstileApi> {
       script.src = SCRIPT_URL;
       script.async = true;
       script.defer = true;
-      script.referrerPolicy = "no-referrer";
       document.head.appendChild(script);
     }
   }).catch((error) => {
     scriptPromise = null;
+    const failedScript = document.getElementById(SCRIPT_ID);
+    if (!window.turnstile) failedScript?.remove();
     throw error;
   });
   return scriptPromise;
@@ -58,37 +68,55 @@ function loadTurnstile(): Promise<TurnstileApi> {
 export function TurnstileWidget({
   siteKey,
   action,
+  required = true,
   onTokenChange
 }: {
   siteKey: string;
   action: string;
+  required?: boolean;
   onTokenChange: (token: string | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string | null>(null);
   const callbackRef = useRef(onTokenChange);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   callbackRef.current = onTokenChange;
 
   useEffect(() => {
     let cancelled = false;
-    let widgetId: string | null = null;
+    setError(null);
     callbackRef.current(null);
     void loadTurnstile()
       .then((api) => {
         if (cancelled || !containerRef.current) return;
-        widgetId = api.render(containerRef.current, {
+        widgetIdRef.current = api.render(containerRef.current, {
           sitekey: siteKey,
           action,
           theme: "light",
           language: "zh-CN",
+          size: "flexible",
+          retry: "auto",
+          "retry-interval": 5000,
+          "refresh-expired": "auto",
+          "refresh-timeout": "auto",
+          "response-field": false,
           callback: (token) => {
             setError(null);
             callbackRef.current(token);
           },
           "expired-callback": () => callbackRef.current(null),
-          "error-callback": () => {
+          "timeout-callback": () => {
             callbackRef.current(null);
-            setError("人机验证暂时不可用，请刷新页面重试");
+            setError("验证等待超时，请重新验证");
+          },
+          "unsupported-callback": () => {
+            callbackRef.current(null);
+            setError("当前内置浏览器不支持人机验证，请使用 Safari 或 Chrome 打开");
+          },
+          "error-callback": (errorCode) => {
+            callbackRef.current(null);
+            setError(`人机验证暂时不可用（错误码 ${errorCode}）`);
           }
         });
       })
@@ -98,14 +126,35 @@ export function TurnstileWidget({
     return () => {
       cancelled = true;
       callbackRef.current(null);
-      if (widgetId && window.turnstile) window.turnstile.remove(widgetId);
+      if (widgetIdRef.current && window.turnstile) {
+        window.turnstile.remove(widgetIdRef.current);
+      }
+      widgetIdRef.current = null;
     };
-  }, [action, siteKey]);
+  }, [action, attempt, siteKey]);
+
+  function retryVerification() {
+    setError(null);
+    callbackRef.current(null);
+    if (widgetIdRef.current && window.turnstile) {
+      window.turnstile.reset(widgetIdRef.current);
+      return;
+    }
+    setAttempt((current) => current + 1);
+  }
 
   return (
     <div className="turnstile-field">
       <div ref={containerRef} />
-      {error ? <p role="alert">{error}</p> : <small>由 Cloudflare Turnstile 完成人机验证</small>}
+      {error ? (
+        <div className="turnstile-recovery" role="alert">
+          <p>
+            {error}
+            {!required ? "；你仍可继续注册，系统会启用频率限制" : ""}
+          </p>
+          <button type="button" onClick={retryVerification}>重新验证</button>
+        </div>
+      ) : <small>由 Cloudflare Turnstile 完成人机验证</small>}
     </div>
   );
 }

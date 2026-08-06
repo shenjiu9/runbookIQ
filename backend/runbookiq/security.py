@@ -219,7 +219,9 @@ class CloudflareTurnstileVerifier:
     ) -> bool:
         if not self.enabled:
             return not self.required
-        if not token or len(token) > 2048:
+        if not token:
+            return not self.required
+        if len(token) > 2048:
             return False
         payload = {
             "secret": self._secret_key,
