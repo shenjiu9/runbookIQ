@@ -254,12 +254,35 @@ SUITES = {
 }
 
 
-def list_benchmarks(knowledge_base_id: str) -> list[EvaluationSuite]:
-    return [
+def list_benchmarks(
+    knowledge_base_id: str,
+    *,
+    source_ids: set[str] | None = None,
+) -> list[EvaluationSuite]:
+    suites = [
         suite
         for suite, _cases_for_suite in SUITES.values()
-        if suite.knowledge_base_id == knowledge_base_id
+        if suite.id != CHAT_SUPPORT_SUITE_ID
+        and suite.knowledge_base_id == knowledge_base_id
     ]
+    if CHAT_SUPPORT_SOURCE in (source_ids or set()):
+        suites.append(
+            CHAT_SUPPORT_SUITE.model_copy(
+                update={"knowledge_base_id": knowledge_base_id}
+            )
+        )
+    return suites
+
+
+def benchmark_belongs_to_knowledge_base(
+    suite_id: str,
+    *,
+    knowledge_base_id: str,
+    source_ids: set[str],
+) -> bool:
+    if suite_id == CHAT_SUPPORT_SUITE_ID:
+        return CHAT_SUPPORT_SOURCE in source_ids
+    return get_benchmark(suite_id).knowledge_base_id == knowledge_base_id
 
 
 def get_benchmark(suite_id: str) -> EvaluationSuite:

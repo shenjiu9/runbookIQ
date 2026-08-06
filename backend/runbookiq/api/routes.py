@@ -35,7 +35,12 @@ from runbookiq.domain.tenancy import (
     TenantRole,
     TenantSession,
 )
-from runbookiq.evaluation.benchmark import get_benchmark, list_benchmarks, load_benchmark
+from runbookiq.evaluation.benchmark import (
+    benchmark_belongs_to_knowledge_base,
+    get_benchmark,
+    list_benchmarks,
+    load_benchmark,
+)
 from runbookiq.security import RateLimitExceeded
 
 router = APIRouter(prefix="/api")
@@ -549,7 +554,11 @@ async def list_evaluation_suites(
     request: Request,
 ) -> list[EvaluationSuite]:
     await _require_knowledge_base(request, knowledge_base_id)
-    return list_benchmarks(knowledge_base_id)
+    documents = await request.app.state.ingestion.list_documents(knowledge_base_id)
+    return list_benchmarks(
+        knowledge_base_id,
+        source_ids={document.source_id for document in documents},
+    )
 
 
 @router.post("/query", response_model=Answer)
@@ -814,7 +823,14 @@ async def run_evaluation(
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="evaluation suite not found") from exc
-        if suite.knowledge_base_id != payload.knowledge_base_id:
+        documents = await request.app.state.ingestion.list_documents(
+            payload.knowledge_base_id
+        )
+        if not benchmark_belongs_to_knowledge_base(
+            suite.id,
+            knowledge_base_id=payload.knowledge_base_id,
+            source_ids={document.source_id for document in documents},
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="该评测集不属于当前知识库，已禁止运行",

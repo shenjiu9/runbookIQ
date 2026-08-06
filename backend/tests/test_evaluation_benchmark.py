@@ -55,7 +55,11 @@ def test_chat_support_benchmark_has_conversation_and_fact_labels() -> None:
     assert all(case["expected_evidence_terms"] for case in cases)
     assert all(case["expected_answer_terms"] for case in cases)
     assert CHAT_SUPPORT_SUITE_ID in {
-        suite.id for suite in list_benchmarks("platform")
+        suite.id
+        for suite in list_benchmarks(
+            "customer-support",
+            source_ids={CHAT_SUPPORT_SOURCE},
+        )
     }
 
 
@@ -64,7 +68,10 @@ def test_chat_support_source_id_matches_the_shipped_json_content() -> None:
     content = (
         project_root / "examples" / "chat" / "customer-support-synthetic.json"
     ).read_bytes()
+    canonical_content = content.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
 
-    assert CHAT_SUPPORT_SOURCE == f"src-{hashlib.sha256(content).hexdigest()[:16]}"
+    assert CHAT_SUPPORT_SOURCE == (
+        f"src-{hashlib.sha256(canonical_content).hexdigest()[:16]}"
+    )
 import hashlib
 from pathlib import Path
